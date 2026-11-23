@@ -14,18 +14,16 @@ import { fireEvent, screen } from '@testing-library/react'
 import { renderConApp } from './utils'
 // Carga las 6 mascotas iniciales en localStorage
 import { asegurarDatosInicialesMascotas } from '../services/mascotasService'
-// Guarda la sesión iniciada (simula que alguien hizo login)
-import { guardarSesion } from '../services/sesionService'
-// Carga los usuarios iniciales y permite buscar uno por su id
-import { asegurarDatosIniciales, obtenerUsuarioPorId } from '../services/usuariosService'
+// Deja una sesión iniciada (simula que alguien hizo login).
+// EP3: los usuarios viven en auth-service, por eso se usa el ayudante de pruebas.
+import { iniciarSesionDePrueba } from './backendSimulado'
 // La página que se va a probar
 import MisMascotasPage from '../paginas/MisMascotasPage'
 
 // Esto se ejecuta antes de cada prueba, para partir siempre con los mismos datos
 beforeEach(() => {
-  asegurarDatosIniciales() // usuarios iniciales (para poder iniciar sesión)
   asegurarDatosInicialesMascotas() // las 6 mascotas iniciales
-  guardarSesion(obtenerUsuarioPorId('admin-maria')!) // inicia sesión como Maria, la dueña
+  iniciarSesionDePrueba('admin-maria') // inicia sesión como Maria, la dueña
 })
 
 // Definición de la prueba: el texto es el nombre que aparecerá en el informe

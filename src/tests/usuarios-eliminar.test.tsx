@@ -1,63 +1,38 @@
-
-/* P02 - Eliminar usuario con confirmación */
+/* P02 - Eliminar usuario con confirmación (EP3: contra auth-service) */
 
 import { beforeEach, expect, test } from 'vitest'
-import { fireEvent, screen, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 
 import { renderConApp } from './utils'
-
-import {
-  asegurarDatosIniciales,
-  obtenerUsuarioPorId
-} from '../services/usuariosService'
-
-import { guardarSesion } from '../services/sesionService'
+import { iniciarSesionDePrueba, simularBackend } from './backendSimulado'
 import UsuariosPage from '../paginas/admin/UsuariosPage'
 
+let backend: ReturnType<typeof simularBackend>
+
 beforeEach(() => {
-  asegurarDatosIniciales()
+  backend = simularBackend()
+  iniciarSesionDePrueba('admin-maria')
 })
 
-test(
-  'P02 - DELETE: eliminar un usuario con confirmación lo quita de la tabla y de los datos',
-  () => {
+test('P02 - DELETE: eliminar un usuario con confirmación lo quita de la tabla y del backend', async () => {
+  const nombreCompleto = 'Benjamín Soto Pérez'
+  const correo = 'be.soto@duoc.cl'
 
-    const nombreCompleto = 'Benjamín Soto Pérez'
-    const correo = 'be.soto@duoc.cl'
+  renderConApp(<UsuariosPage />)
 
-    guardarSesion(
-      obtenerUsuarioPorId('admin-maria')!
-    )
+  // La tabla aparece cuando responde GET /usuarios
+  expect(await screen.findByText(correo)).toBeInTheDocument()
 
-    renderConApp(<UsuariosPage />)
+  fireEvent.click(screen.getByRole('button', { name: `Eliminar a ${nombreCompleto}` }))
 
-    expect(
-      screen.getByText(correo)
-    ).toBeInTheDocument()
+  const confirmacion = screen.getByRole('dialog', { name: 'Eliminar usuario' })
+  fireEvent.click(within(confirmacion).getByRole('button', { name: 'Eliminar' }))
 
-    fireEvent.click(
-      screen.getByRole('button', {
-        name: `Eliminar a ${nombreCompleto}`
-      })
-    )
+  // Desaparece de la tabla después de DELETE /usuarios/{id} y de volver a listar
+  await waitFor(() => expect(screen.queryByText(correo)).toBe(null))
+  expect(await screen.findByText(`Usuario Benjamín eliminado.`)).toBeInTheDocument()
 
-    const confirmacion = screen.getByRole('dialog', {
-      name: 'Eliminar usuario'
-    })
-
-    fireEvent.click(
-      within(confirmacion).getByRole('button', {
-        name: 'Eliminar'
-      })
-    )
-
-    expect(
-      screen.queryByText(correo)
-    ).toBe(null)
-
-    expect(
-      obtenerUsuarioPorId('cli-002')
-    ).toBe(null)
-
-  }
-)
+  const idBenjamin = 5 // posición 5 en los datos de ejemplo (3 cuentas fijas + Camila + Benjamín)
+  expect(backend.llamadas.some((l) => l.metodo === 'DELETE' && l.ruta === `/usuarios/${idBenjamin}`)).toBe(true)
+  expect(backend.usuarios.some((u) => u.correo === correo)).toBe(false)
+})

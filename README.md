@@ -1,6 +1,48 @@
-# Patitas Felices — EP2 (React + Vite + TypeScript)
+# Patitas Felices — EP3 (React + Vite + TypeScript + microservicios Spring Boot)
 
 Sistema web de la **Veterinaria San Marcos** (Rancagua), migrado desde HTML/CSS/JS de la EP1 a **React 19 + Vite + TypeScript**.
+En la EP3 el frontend deja de usar localStorage como base de datos y consume los **microservicios Spring Boot**
+del repositorio `Patitas_Felices_Ev3_Backend`, con autenticación **JWT** y roles.
+
+## EP3 — Integración con el backend
+
+### 1. Levantar el backend
+1. Encender MySQL en XAMPP.
+2. En `Patitas_Felices_Ev3_Backend`, ejecutar cada microservicio (botón ▶ en VS Code o `.\mvnw spring-boot:run`).
+   Para probar el módulo de usuarios bastan: **auth-service (8081)**, contacto-service (8088),
+   notificacion-service (8089) y report-service (8090).
+
+### 2. Levantar el frontend
+```bash
+npm install
+npm run dev
+```
+Las URLs de los microservicios están en `src/services/api.ts`. Para cambiarlas, copiar `.env.example` como `.env`.
+
+### Cuentas de prueba (auth-service)
+| Correo | Contraseña | Rol |
+|---|---|---|
+| ma.calfileo@duoc.cl | 1234 | Administradora |
+| jo.medina@duoc.cl | 1234 | Recepcionista |
+| camila.rojas@gmail.com | gato123 | Cliente |
+
+### Cómo funciona la integración
+| Pieza | Archivo | Qué hace |
+|---|---|---|
+| Cliente HTTP | `src/services/api.ts` | Agrega `Authorization: Bearer <token>`, renueva el token vencido con el refreshToken y reintenta; convierte los errores del backend `{ campo, mensaje }` en `ApiError` |
+| Sesión | `src/services/sesionService.ts` + `src/context/AuthContext.tsx` | Login/registro contra auth-service; guarda token y refreshToken; al **recargar la página** confirma la sesión con `GET /auth/me` |
+| Rutas por rol | `src/routes/RutaProtegida.tsx` | Sin sesión → `/login`; rol sin permiso → inicio; mientras verifica muestra "Verificando tu sesión…" |
+| Usuarios | `src/services/usuariosService.ts` | CRUD contra auth-service (Perfil, Admin → Usuarios) |
+| Reportes | `src/services/reportesService.ts` | Dashboard y Reportes desde report-service (que consulta a los demás) |
+| Contacto | `src/services/contactoService.ts` | Formulario, bandeja del panel (`/admin/mensajes`) y "Mis mensajes" (`/mis-mensajes`) |
+| Notificaciones | `src/componentes/organismos/CampanaNotificaciones.tsx` | Campanita 🔔 en el header y en el panel |
+
+Si un microservicio está apagado, la página no se cae: muestra un aviso con el servicio que no respondió
+(y en Dashboard/Reportes esos indicadores aparecen como “—”).
+
+### Pruebas
+Las pruebas no necesitan el backend encendido: `src/tests/backendSimulado.ts` reemplaza `fetch` y responde
+como auth-service, contacto-service y notificacion-service.
 
 ## Cómo ejecutar el proyecto
 
