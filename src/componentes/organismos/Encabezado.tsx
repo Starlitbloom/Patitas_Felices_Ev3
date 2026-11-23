@@ -2,7 +2,7 @@
    Usa el Navbar de Bootstrap (react-bootstrap) para que en móviles y
    tablets el menú se colapse en un botón hamburguesa.
    Es un componente de PRESENTACIÓN: recibe por props si hay sesión. */
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Link, NavLink } from 'react-router-dom'
 import Navbar from 'react-bootstrap/Navbar'
 
@@ -12,6 +12,8 @@ export interface EncabezadoProps {
   accesoPanel: boolean
   /** Header transparente que flota sobre el hero (solo en Inicio). */
   flotante?: boolean
+  /** EP3: campanita de notificaciones (solo con sesión iniciada). */
+  campana?: ReactNode
 }
 
 interface EnlaceMenu {
@@ -30,7 +32,7 @@ const ENLACES: EnlaceMenu[] = [
   { to: '/perfil', texto: 'Mi perfil', soloSesion: true },
 ]
 
-export function Encabezado({ sesionActiva, accesoPanel, flotante = false }: EncabezadoProps) {
+export function Encabezado({ sesionActiva, accesoPanel, flotante = false, campana }: EncabezadoProps) {
   const [menuAbierto, setMenuAbierto] = useState(false)
   const [conSombra, setConSombra] = useState(false)
 
@@ -76,6 +78,7 @@ export function Encabezado({ sesionActiva, accesoPanel, flotante = false }: Enca
                     </NavLink>
                   </li>
                 ))}
+                {campana && <li className="item-campana">{campana}</li>}
                 <li>
                   <NavLink to={cuenta.to} className={claseEnlace} onClick={cerrarMenu}>
                     {cuenta.texto}

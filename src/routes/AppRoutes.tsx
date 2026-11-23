@@ -26,6 +26,8 @@ import DetalleUsuarioPage from '../paginas/admin/DetalleUsuarioPage'
 import ReportesPage from '../paginas/admin/ReportesPage'
 import AgendaPage from '../paginas/admin/AgendaPage'
 import CitasPage from '../paginas/admin/CitasPage'
+import MensajesPage from '../paginas/admin/MensajesPage'
+import MisMensajesPage from '../paginas/MisMensajesPage'
 
 /* =========================================================
    NOSOTROS
@@ -77,6 +79,8 @@ export function AppRoutes() {
 
         {/* CONTACTO: página migrada a React */}
         <Route path="/contacto" element={<ContactoPage />} />
+        {/* EP3: mensajes enviados por el usuario y respuestas de la clínica (contacto-service) */}
+        <Route path="/mis-mensajes" element={<RutaProtegida><MisMensajesPage /></RutaProtegida>} />
 
         {/* MASCOTAS */}
         <Route path="/mascotas" element={<RutaProtegida><MisMascotasPage /></RutaProtegida>} />
@@ -111,6 +115,8 @@ export function AppRoutes() {
         <Route path="mascotas" element={<MascotasAdminPage />} />
         <Route path="citas" element={<CitasPage />} />
         <Route path="agenda" element={<AgendaPage />} />
+        {/* EP3: bandeja de contacto (contacto-service) — admin y recepcionista */}
+        <Route path="mensajes" element={<MensajesPage />} />
       </Route>
     </Routes>
   )

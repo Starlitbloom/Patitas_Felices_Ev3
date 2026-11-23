@@ -6,6 +6,7 @@ import { Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { Encabezado } from '../organismos/Encabezado'
 import { PiePagina } from '../organismos/PiePagina'
+import { CampanaNotificaciones } from '../organismos/CampanaNotificaciones'
 
 export function PlantillaPublica() {
   const { usuario, esPersonal } = useAuth()
@@ -19,7 +20,12 @@ export function PlantillaPublica() {
 
   return (
     <div className={`pagina ${esInicio ? 'pagina--inicio' : ''}`.trim()}>
-      <Encabezado sesionActiva={!!usuario} accesoPanel={esPersonal} flotante={esInicio} />
+      <Encabezado
+        sesionActiva={!!usuario}
+        accesoPanel={esPersonal}
+        flotante={esInicio}
+        campana={usuario ? <CampanaNotificaciones key={usuario.correo} /> : undefined}
+      />
       <Outlet />
       <PiePagina />
     </div>

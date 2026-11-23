@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { BarraLateralAdmin } from '../organismos/BarraLateralAdmin'
+import { CampanaNotificaciones } from '../organismos/CampanaNotificaciones'
 
 export function PlantillaAdmin() {
   const [menuAbierto, setMenuAbierto] = useState(false)
@@ -31,6 +32,9 @@ export function PlantillaAdmin() {
           >
             ☰ Menú
           </button>
+          <div className="admin-campana-wrap">
+            <CampanaNotificaciones variante="admin" />
+          </div>
           <Outlet />
         </main>
       </div>

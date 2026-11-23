@@ -12,11 +12,17 @@
    - Validaciones en tiempo real.
    - Mensajes de error.
    - Enfoque en el primer campo incorrecto.
-   - Confirmación local.
+   - EP3: el mensaje se guarda en contacto-service (POST /mensajes).
+     Si hay sesión iniciada, queda asociado a la cuenta y la
+     respuesta de la clínica aparece en "Mis mensajes".
 ========================================================= */
 
 import { useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
+import { Link } from 'react-router-dom'
+import { useAuth } from '../../context/AuthContext'
+import { ApiError, mensajeDeError } from '../../services/api'
+import { enviarMensaje } from '../../services/contactoService'
 
 
 /* =========================================================
@@ -195,9 +201,19 @@ export function validarCampoContacto(
 
 export default function FormularioContacto() {
 
+  // Si hay sesión, el nombre y el correo se completan solos.
+  const { usuario } = useAuth()
+  const datosDeSesion: DatosContacto = usuario
+    ? { ...datosIniciales, nombre: `${usuario.nombre} ${usuario.apellidos}`.trim().slice(0, 60), correo: usuario.correo }
+    : datosIniciales
+
   // Estado de los datos.
   const [datos, setDatos] =
-    useState<DatosContacto>(datosIniciales)
+    useState<DatosContacto>(datosDeSesion)
+
+  // EP3: estado del envío al servidor.
+  const [enviando, setEnviando] = useState(false)
+  const [errorServidor, setErrorServidor] = useState<string | null>(null)
 
   //  Estado de los errores.
   const [errores, setErrores] =
@@ -313,7 +329,7 @@ export default function FormularioContacto() {
      9. ENVIAR FORMULARIO
   ========================================================= */
 
-  function manejarEnvio(
+  async function manejarEnvio(
     evento: FormEvent<HTMLFormElement>
   ) {
 
@@ -321,6 +337,7 @@ export default function FormularioContacto() {
     evento.preventDefault()
 
     setEnviado(false)
+    setErrorServidor(null)
 
     // Ejecutamos todas las validaciones.
     const nuevosErrores = validarFormulario()
@@ -358,13 +375,30 @@ export default function FormularioContacto() {
     }
 
     /* =====================================================
-       FORMULARIO
+       ENVÍO A contacto-service
     ===================================================== */
+
+    setEnviando(true)
+    try {
+      await enviarMensaje({ ...datos, nombre: datos.nombre.trim(), correo: datos.correo.trim(), mensaje: datos.mensaje.trim() })
+    } catch (error) {
+      // El backend valida lo mismo: si rechaza un campo, se marca ese campo
+      if (error instanceof ApiError && error.campo && error.campo in datosIniciales) {
+        const campo = error.campo as CampoContacto
+        setErrores((anterior) => ({ ...anterior, [campo]: error.message }))
+        referencias.current[campo]?.focus()
+      } else {
+        setErrorServidor(mensajeDeError(error))
+      }
+      return
+    } finally {
+      setEnviando(false)
+    }
 
     setEnviado(true)
 
     // Limpiamos el formulario.
-    setDatos(datosIniciales)
+    setDatos(datosDeSesion)
 
     // Limpiamos los errores.
     setErrores({})
@@ -688,8 +722,9 @@ export default function FormularioContacto() {
               <button
                 type="submit"
                 className="boton-enviar-contacto"
+                disabled={enviando}
               >
-                Enviar mensaje →
+                {enviando ? 'Enviando…' : 'Enviar mensaje →'}
               </button>
 
             </div>
@@ -706,7 +741,22 @@ export default function FormularioContacto() {
               >
                 ✓ ¡Tu mensaje fue enviado correctamente!
                 Gracias por contactarnos.
+                {usuario && (
+                  <>
+                    {' '}Verás nuestra respuesta en{' '}
+                    <Link to="/mis-mensajes">Mis mensajes</Link>.
+                  </>
+                )}
 
+              </p>
+            )}
+
+            {errorServidor && (
+              <p
+                className="mensaje-error-contacto"
+                role="alert"
+              >
+                {errorServidor}
               </p>
             )}
 

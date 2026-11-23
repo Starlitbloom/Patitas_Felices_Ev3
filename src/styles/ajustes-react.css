@@ -323,3 +323,279 @@ button.admin-nav-item {
 .perfil-header-imagen {
     overflow: hidden;
 }
+/* ===== EP3 — integración con los microservicios ===== */
+
+/* Aviso de error (servicio apagado, sin permisos...) */
+.admin-aviso--error {
+    background-color: rgba(255, 140, 160, 0.14);
+    border-color: rgba(255, 140, 160, 0.35);
+    color: #FFC7D3;
+}
+
+/* Mensaje mientras se verifica la sesión guardada al recargar la página */
+.ruta-cargando {
+    min-height: 50vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--texto, #4a4a4a);
+    opacity: 0.75;
+}
+
+/* Error del servidor en el formulario de contacto (mismo diseño que el mensaje de éxito) */
+.seccion-formulario-contacto .mensaje-error-contacto {
+    grid-column: 1 / -1;
+    margin: 0;
+    padding: 18px 20px;
+    background: #fdecef;
+    border-radius: 16px;
+    color: #8a2c43;
+    font-size: 14px;
+    line-height: 1.6;
+    text-align: center;
+}
+
+/* ===== Bandeja de mensajes de contacto (panel) ===== */
+.admin-filtros-estado {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 18px;
+}
+
+.admin-filtros-estado button {
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.8);
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 0.9rem;
+}
+
+.admin-filtros-estado button.activo {
+    background: #E6D6F7;
+    color: #2A2440;
+    border-color: #E6D6F7;
+    font-weight: 600;
+}
+
+.admin-badge--pendiente { background: rgba(255, 214, 165, 0.2); color: #FFD6A5; }
+.admin-badge--leido { background: rgba(214, 236, 250, 0.18); color: #D6ECFA; }
+.admin-badge--respondido { background: rgba(200, 240, 216, 0.18); color: #C8F0D8; }
+.admin-badge--archivado { background: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.6); }
+
+.admin-mensaje-texto {
+    white-space: pre-wrap;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    padding: 14px 16px;
+    color: rgba(255, 255, 255, 0.85);
+    margin: 8px 0 16px;
+}
+
+.admin-mensaje-meta {
+    color: rgba(255, 255, 255, 0.65);
+    font-size: 0.9rem;
+    margin: 0;
+}
+
+.admin-mensaje-respuesta textarea {
+    width: 100%;
+    min-height: 120px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(255, 255, 255, 0.06);
+    color: #fff;
+    padding: 12px 14px;
+    resize: vertical;
+}
+
+.admin-mensaje-acciones {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 14px;
+}
+
+/* ===== "Mis mensajes" (sitio público) ===== */
+.mis-mensajes-respuesta {
+    margin-top: 10px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: #f3ecfb;
+    color: #3d3356;
+    white-space: pre-wrap;
+}
+
+.mis-mensajes-respuesta strong {
+    display: block;
+    margin-bottom: 4px;
+}
+
+/* ===== Campanita de notificaciones (notificacion-service) ===== */
+.campana {
+    position: relative;
+    display: inline-flex;
+}
+
+.campana-boton {
+    position: relative;
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    border: none;
+    font-size: 1.2rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.15s ease;
+}
+
+.campana-boton:hover {
+    transform: scale(1.06);
+}
+
+.campana--publica .campana-boton {
+    background: rgba(255, 255, 255, 0.75);
+    box-shadow: 0 2px 10px rgba(122, 92, 170, 0.15);
+}
+
+.campana--admin .campana-boton {
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.campana-contador {
+    position: absolute;
+    top: -3px;
+    right: -3px;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: #FF6F91;
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 20px;
+    text-align: center;
+}
+
+/* fixed: así no lo recorta el overflow: hidden del header (top/right se calculan en el componente) */
+.campana-panel {
+    position: fixed;
+    width: min(340px, 92vw);
+    max-height: 420px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    background: #fff;
+    color: #3d3356;
+    border-radius: 18px;
+    box-shadow: 0 14px 40px rgba(42, 36, 64, 0.25);
+    z-index: 1050;
+    text-align: left;
+}
+
+.campana-panel-cabecera {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px;
+    border-bottom: 1px solid #efe8f7;
+}
+
+.campana-leer-todas {
+    background: none;
+    border: none;
+    color: #7A5CAA;
+    font-size: 0.82rem;
+    text-decoration: underline;
+}
+
+.campana-vacia {
+    margin: 0;
+    padding: 18px 16px;
+    color: #7a7290;
+    font-size: 0.9rem;
+}
+
+/* La campanita vive dentro del <nav> del header: estas reglas anulan
+   "nav ul { display: flex }" y "nav li" de styles.css para que los
+   avisos se vean uno debajo del otro y no en fila. */
+.campana-panel .campana-lista {
+    display: flex;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 0;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.campana-panel .campana-lista li {
+    display: block;
+    width: 100%;
+}
+
+.campana-item {
+    width: 100%;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    padding: 12px 16px;
+    border: none;
+    border-bottom: 1px solid #f4eff9;
+    background: #fff;
+    text-align: left;
+    color: inherit;
+}
+
+.campana-item:hover {
+    background: #faf6fe;
+}
+
+.campana-item--nueva {
+    background: #f6effd;
+}
+
+.campana-item-icono {
+    font-size: 1.2rem;
+}
+
+.campana-item-texto {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 0.88rem;
+}
+
+.campana-item-texto small {
+    color: #9a93ad;
+}
+
+/* En el header público va junto al menú; en el panel, arriba a la derecha */
+.menu-principal .item-campana {
+    display: flex;
+    align-items: center;
+}
+
+.admin-contenido {
+    position: relative;
+}
+
+.admin-campana-wrap {
+    position: absolute;
+    top: 22px;
+    right: 28px;
+    z-index: 20;
+}
+
+@media (max-width: 991.98px) {
+    .admin-campana-wrap {
+        top: 14px;
+        right: 16px;
+    }
+}
