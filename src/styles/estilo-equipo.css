@@ -1,0 +1,376 @@
+/* =========================================================
+   PATITAS FELICES — estilo-equipo.css
+   Vista nueva de la EP2: "Nuestro equipo" (/equipo y /equipo/:id).
+   Usa la misma paleta de styles.css (--rosa, --celeste, --morado…).
+========================================================= */
+
+.equipo-pagina {
+    padding: 70px 0 90px;
+    background:
+        radial-gradient(circle at 8% 10%, rgba(214, 236, 250, 0.7) 0%, transparent 35%),
+        radial-gradient(circle at 92% 30%, rgba(255, 214, 231, 0.6) 0%, transparent 35%),
+        #F8F3EA;
+}
+
+/* ---------- Filtros ---------- */
+
+.equipo-filtros {
+    background-color: var(--blanco);
+    border-radius: 24px;
+    padding: 22px 24px 26px;
+    margin: 10px 0 18px;
+    box-shadow: 0 10px 28px rgba(46, 46, 56, 0.07);
+}
+
+.equipo-filtros input,
+.equipo-filtros select {
+    width: 100%;
+}
+
+.equipo-limpiar {
+    
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 2px solid var(--morado);
+    background: transparent;
+    font-weight: bold;
+    color: var(--texto);
+}
+
+.equipo-limpiar:hover {
+    background-color: var(--morado);
+}
+
+.equipo-resumen {
+    color: var(--gris-suave);
+    font-size: 14px;
+    margin-bottom: 18px;
+}
+
+.equipo-vacio {
+    text-align: center;
+    padding: 50px 20px;
+    border-radius: 24px;
+    background-color: var(--blanco);
+    color: var(--gris-suave);
+}
+
+/* ---------- Tarjeta ---------- */
+
+.equipo-tarjeta {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: 24px;
+    background-color: var(--blanco);
+    box-shadow: 0 10px 28px rgba(46, 46, 56, 0.08);
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.equipo-tarjeta:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 16px 34px rgba(46, 46, 56, 0.13);
+}
+
+.equipo-tarjeta-imagen {
+    width: 100%;
+    height: 190px;
+    object-fit: cover;
+    background-color: var(--celeste);
+}
+
+.equipo-tarjeta-cuerpo {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 20px 22px 24px;
+}
+
+.equipo-tarjeta-cuerpo .seccion-etiqueta {
+    align-self: flex-start;
+}
+
+.equipo-tarjeta-cuerpo h3 {
+    margin: 6px 0 0;
+    font-size: 20px;
+}
+
+.equipo-tarjeta-dato {
+    color: var(--gris-suave);
+    font-size: 14px;
+    margin: 0;
+}
+
+.equipo-especies {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    list-style: none;
+    padding: 0;
+    margin: 8px 0 16px;
+}
+
+.equipo-especies li {
+    padding: 4px 12px;
+    border-radius: 50px;
+    background-color: var(--morado);
+    font-size: 12.5px;
+    font-weight: bold;
+}
+
+/* ---------- Detalle ---------- */
+
+.equipo-detalle {
+    background-color: var(--blanco);
+    border-radius: 28px;
+    padding: 28px;
+    box-shadow: 0 12px 32px rgba(46, 46, 56, 0.08);
+}
+
+.equipo-detalle h1 {
+    margin: 12px 0 14px;
+}
+
+.equipo-detalle-imagen {
+    width: 100%;
+    max-height: 380px;
+    object-fit: cover;
+    border-radius: 22px;
+}
+
+.equipo-detalle-datos {
+    list-style: none;
+    padding: 0;
+    margin: 18px 0 0;
+}
+
+.equipo-detalle-datos li {
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(46, 46, 56, 0.08);
+}
+
+/* =========================================================
+   Agenda semanal del médico (/equipo/:id)
+========================================================= */
+
+.agenda {
+    background-color: var(--blanco);
+    border-radius: 28px;
+    padding: 28px;
+    margin-top: 48px;
+    box-shadow: 0 12px 32px rgba(46, 46, 56, 0.08);
+    scroll-margin-top: 110px; /* para que el encabezado fijo no tape el título */
+}
+
+.agenda-cabecera {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 22px;
+}
+
+.agenda-cabecera h2 {
+    margin: 0 0 6px;
+}
+
+.agenda-resumen {
+    margin: 0;
+    color: var(--gris-suave);
+}
+
+.agenda-navegacion {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.agenda-navegacion button {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 2px solid var(--morado);
+    background: var(--blanco);
+    font-size: 22px;
+    line-height: 1;
+    color: var(--texto);
+    transition: background-color 0.2s;
+}
+
+.agenda-navegacion button:hover:not(:disabled) {
+    background-color: var(--morado);
+}
+
+.agenda-navegacion button:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.agenda-semana {
+    font-weight: bold;
+    min-width: 130px;
+    text-align: center;
+}
+
+.agenda-grilla {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.agenda-dia {
+    background: #FBF8F3;
+    border-radius: 20px;
+    padding: 14px 12px;
+}
+
+.agenda-dia--libre-medico {
+    opacity: 0.55;
+}
+
+.agenda-dia-titulo {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.agenda-dia-titulo span {
+    font-size: 13px;
+    color: var(--gris-suave);
+}
+
+.agenda-bloques {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.agenda-bloque {
+    border: none;
+    border-radius: 12px;
+    padding: 8px 4px;
+    font-weight: bold;
+    font-size: 14px;
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.agenda-bloque--libre {
+    background-color: var(--celeste);
+    color: var(--texto);
+    cursor: pointer;
+}
+
+.agenda-bloque--libre:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 14px rgba(114, 169, 208, 0.45);
+    background-color: var(--celeste-fuerte);
+    color: var(--blanco);
+}
+
+.agenda-bloque--ocupado {
+    background-color: var(--rosa);
+    color: #9a5a73;
+    text-decoration: line-through;
+    cursor: not-allowed;
+}
+
+.agenda-bloque--pasado {
+    background-color: #ECECEC;
+    color: #A3A3A8;
+    cursor: not-allowed;
+}
+
+.agenda-no-atiende {
+    text-align: center;
+    font-size: 14px;
+    color: var(--gris-suave);
+    margin: 18px 0 0;
+}
+
+.agenda-leyenda {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+    list-style: none;
+    padding: 0;
+    margin: 20px 0 0;
+    font-size: 14px;
+    color: var(--gris-suave);
+}
+
+.agenda-leyenda li {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.agenda-punto {
+    width: 14px;
+    height: 14px;
+    border-radius: 4px;
+    display: inline-block;
+}
+
+.agenda-punto--libre { background-color: var(--celeste); }
+.agenda-punto--ocupado { background-color: var(--rosa); }
+.agenda-punto--pasado { background-color: #ECECEC; }
+
+/* Tablet: los días pasan a 3 columnas */
+@media (max-width: 991px) {
+    .agenda-grilla {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+/* Celular: un día por fila, con las horas en fila */
+@media (max-width: 575px) {
+    .agenda {
+        padding: 20px 16px;
+    }
+
+    .agenda-grilla {
+        grid-template-columns: 1fr;
+    }
+
+    .agenda-dia-titulo {
+        flex-direction: row;
+        justify-content: space-between;
+    }
+
+    .agenda-bloques {
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+
+    .agenda-bloque {
+        flex: 1 0 70px;
+    }
+}
+
+/* Aviso en Solicitar cita cuando se llega desde la agenda */
+.cita-preseleccion {
+    background: linear-gradient(120deg, var(--celeste) 0%, var(--morado) 100%);
+    border-radius: 18px;
+    padding: 16px 20px;
+    max-width: 930px;
+    margin: 0 auto 30px;
+    color: var(--texto);
+}
+
+.cita-preseleccion p {
+    margin: 4px 0 0;
+    font-size: 14px;
+}
+
+.cita-preseleccion--aviso {
+    background: #FFF4D6;
+}
+
+.ayuda-servicio-medico {
+    display: block;
+    margin-top: 8px;
+    color: #6F6F78;
+}
