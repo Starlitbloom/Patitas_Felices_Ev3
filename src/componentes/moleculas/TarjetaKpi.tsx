@@ -5,7 +5,8 @@ import { Link } from 'react-router-dom'
 /** Props del indicador: ícono, número, texto y enlace opcional. */
 export interface TarjetaKpiProps {
   icono: string
-  numero: number
+  /** null = el microservicio que entrega este dato no respondió (se muestra "—"). */
+  numero: number | null
   etiqueta: string
   to?: string
 }
@@ -19,7 +20,9 @@ export function TarjetaKpi({ icono, numero, etiqueta, to }: TarjetaKpiProps) {
           {icono}
         </span>
       </div>
-      <span className="admin-kpi-numero">{numero}</span>
+      <span className="admin-kpi-numero" title={numero === null ? 'Servicio no disponible' : undefined}>
+        {numero ?? '—'}
+      </span>
       <span className="admin-kpi-label">{etiqueta}</span>
     </>
   )

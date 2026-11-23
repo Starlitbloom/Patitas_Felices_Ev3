@@ -1,16 +1,20 @@
 /* PÁGINA (contenedor) — Reportes (antes admin/reportes.html).
    Gráficos con Chart.js (react-chartjs-2).
-   Corrige el bug de la EP1: "Exportar reporte completo" ahora genera
-   un Excel con tres hojas (Usuarios, Mascotas y Citas). */
-import type { ReactNode } from 'react'
+   EP3: los datos vienen de report-service (GET /reportes/completo), que los
+   consulta por WebClient a auth, mascotas, citas, contacto y notificaciones.
+   "Exportar reporte completo" pide las filas a GET /reportes/exportar y arma
+   un Excel con tres hojas (Usuarios, Mascotas y Citas) con SheetJS.
+   Cada reporte generado queda registrado en el historial del backend. */
+import { useEffect, useState, type ReactNode } from 'react'
 import { ArcElement, BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, Tooltip } from 'chart.js'
 import { Bar, Doughnut } from 'react-chartjs-2'
-import { listarUsuarios } from '../../services/usuariosService'
-import { estadoCita, listarCitas, listarMascotas, listarSolicitudesMascotas } from '../../services/datosEquipoService'
-import { contarPor, recortar } from '../../utils/estadisticas'
-import { exportarLibro, usuariosAFilas } from '../../utils/exportarExcel'
+import { mensajeDeError } from '../../services/api'
+import { obtenerExportacion, obtenerReporteCompleto, type ReporteCompleto } from '../../services/reportesService'
+import { recortar } from '../../utils/estadisticas'
+import { exportarLibro } from '../../utils/exportarExcel'
 import { EncabezadoAdmin } from '../../componentes/organismos/EncabezadoAdmin'
 import { TarjetaKpi } from '../../componentes/moleculas/TarjetaKpi'
+import { AvisoServicios } from '../../componentes/moleculas/AvisoServicios'
 import { Boton } from '../../componentes/atomos/Boton'
 
 ChartJS.register(ArcElement, BarElement, CategoryScale, LinearScale, Tooltip, Legend)
@@ -35,194 +39,234 @@ function Grafico({ titulo, vacio, children }: { titulo: string; vacio: boolean; 
   )
 }
 
+/** Sección de un microservicio que no respondió. */
+function SinServicio({ servicio }: { servicio: string }) {
+  return <p className="admin-tabla-vacia">Datos no disponibles: {servicio} no respondió.</p>
+}
+
 export default function ReportesPage() {
-  const usuarios = listarUsuarios()
-  const mascotas = listarMascotas()
-  const citas = listarCitas()
-  const solicitudes = listarSolicitudesMascotas()
+  const [reporte, setReporte] = useState<ReporteCompleto | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [exportando, setExportando] = useState(false)
 
-  const porRegion = contarPor(usuarios, (u) => u.region || 'Sin región')
-  const topComunas = contarPor(
-    usuarios.filter((u) => u.comuna),
-    (u) => `${u.comuna}||${u.region || 'Sin región'}`,
-  ).slice(0, 10)
-  const porEspecie = contarPor(mascotas, (m) => m.especie || 'Sin especificar')
-  const porServicio = contarPor(citas, (c) => c.servicio || 'Sin especificar').slice(0, 6)
-  const citasPendientes = citas.filter((c) => estadoCita(c) === 'pendiente').length
-  const citasConfirmadas = citas.filter((c) => estadoCita(c).startsWith('confirmad')).length
-  const citasCanceladas = citas.filter((c) => estadoCita(c).startsWith('cancelad')).length
+  useEffect(() => {
+    let activo = true
+    obtenerReporteCompleto()
+      .then((r) => activo && setReporte(r))
+      .catch((e) => activo && setError(mensajeDeError(e)))
+    return () => {
+      activo = false
+    }
+  }, [])
 
-  const exportarTodo = () =>
-    exportarLibro(
-      {
-        Usuarios: usuariosAFilas(usuarios),
-        Mascotas: mascotas.map((m) => ({ Nombre: m.nombre, Especie: m.especie, Raza: m.raza, Estado: m.estado, Dueño: m.correoDueño })),
-        Citas: citas.map((c) => ({ Fecha: c.fecha, Servicio: c.servicio, Motivo: c.motivo, Estado: c.estado, Usuario: c.correoUsuario })),
-      },
-      'reporte-completo-patitas-felices',
+  const exportarTodo = async () => {
+    setExportando(true)
+    try {
+      const { hojas, nombreArchivo } = await obtenerExportacion()
+      exportarLibro(hojas, nombreArchivo)
+    } catch (e) {
+      setError(mensajeDeError(e))
+    } finally {
+      setExportando(false)
+    }
+  }
+
+  if (!reporte) {
+    return (
+      <>
+        <EncabezadoAdmin>Reportes 🐾</EncabezadoAdmin>
+        {error ? (
+          <div className="admin-aviso admin-aviso--error" role="alert">
+            {error}
+          </div>
+        ) : (
+          <p className="admin-tabla-vacia">Generando reporte…</p>
+        )}
+      </>
     )
+  }
+
+  const { usuarios, mascotas, citas } = reporte
 
   return (
     <>
       <EncabezadoAdmin>Reportes 🐾</EncabezadoAdmin>
+      {error && (
+        <div className="admin-aviso admin-aviso--error" role="alert">
+          {error}
+        </div>
+      )}
+      <AvisoServicios servicios={reporte.serviciosNoDisponibles} />
 
-      {/* -------- USUARIOS -------- */}
+      {/* -------- USUARIOS (auth-service) -------- */}
       <section className="admin-kpis">
-        <TarjetaKpi icono="👥" numero={usuarios.length} etiqueta="Usuarios totales" />
-        <TarjetaKpi icono="🛡️" numero={usuarios.filter((u) => u.rol === 'admin').length} etiqueta="Administradores" />
-        <TarjetaKpi icono="📍" numero={new Set(usuarios.filter((u) => u.region).map((u) => u.region)).size} etiqueta="Regiones con usuarios" />
-        <TarjetaKpi icono="🖼️" numero={usuarios.filter((u) => u.avatar).length} etiqueta="Con foto de perfil" />
+        <TarjetaKpi icono="👥" numero={usuarios?.total ?? null} etiqueta="Usuarios totales" />
+        <TarjetaKpi icono="🛡️" numero={usuarios?.administradores ?? null} etiqueta="Administradores" />
+        <TarjetaKpi icono="📍" numero={usuarios?.regionesConUsuarios ?? null} etiqueta="Regiones con usuarios" />
+        <TarjetaKpi icono="🖼️" numero={usuarios?.conFotoPerfil ?? null} etiqueta="Con foto de perfil" />
       </section>
 
-      <section className="admin-graficos">
-        <Grafico titulo="Usuarios por rol" vacio={usuarios.length === 0}>
-          <Doughnut
-            options={opcionesDona}
-            data={{
-              labels: ['Clientes', 'Recepcionistas', 'Administradores'],
-              datasets: [
-                {
-                  data: [
-                    usuarios.filter((u) => u.rol === 'cliente').length,
-                    usuarios.filter((u) => u.rol === 'recepcionista').length,
-                    usuarios.filter((u) => u.rol === 'admin').length,
+      {usuarios ? (
+        <>
+          <section className="admin-graficos">
+            <Grafico titulo="Usuarios por rol" vacio={usuarios.total === 0}>
+              <Doughnut
+                options={opcionesDona}
+                data={{
+                  labels: ['Clientes', 'Recepcionistas', 'Administradores'],
+                  datasets: [
+                    {
+                      data: [usuarios.clientes, usuarios.recepcionistas, usuarios.administradores],
+                      backgroundColor: ['#D6ECFA', '#C8F0D8', '#FFD6E7'],
+                      borderColor: '#2A2440',
+                      borderWidth: 3,
+                    },
                   ],
-                  backgroundColor: ['#D6ECFA', '#C8F0D8', '#FFD6E7'],
-                  borderColor: '#2A2440',
-                  borderWidth: 3,
-                },
-              ],
-            }}
-          />
-        </Grafico>
-        <Grafico titulo="Usuarios por región" vacio={porRegion.length === 0}>
-          <Bar
-            options={opcionesBarras(true)}
-            data={{
-              labels: porRegion.map(([r]) => recortar(r, 22)),
-              datasets: [{ label: 'Usuarios', data: porRegion.map(([, n]) => n), backgroundColor: '#E6D6F7', borderRadius: 8 }],
-            }}
-          />
-        </Grafico>
-      </section>
+                }}
+              />
+            </Grafico>
+            <Grafico titulo="Usuarios por región" vacio={usuarios.porRegion.length === 0}>
+              <Bar
+                options={opcionesBarras(true)}
+                data={{
+                  labels: usuarios.porRegion.map((r) => recortar(r.nombre, 22)),
+                  datasets: [{ label: 'Usuarios', data: usuarios.porRegion.map((r) => r.cantidad), backgroundColor: '#E6D6F7', borderRadius: 8 }],
+                }}
+              />
+            </Grafico>
+          </section>
 
-      <section className="admin-tabla-seccion">
-        <h2>Comunas con más usuarios registrados</h2>
-        {topComunas.length === 0 ? (
-          <p className="admin-tabla-vacia">Aún no hay suficientes datos de comunas.</p>
-        ) : (
-          <div className="admin-tabla-wrap table-responsive">
-            <table className="admin-tabla">
-              <thead>
-                <tr>
-                  <th>Comuna</th>
-                  <th>Región</th>
-                  <th>Usuarios</th>
-                </tr>
-              </thead>
-              <tbody>
-                {topComunas.map(([clave, cantidad]) => {
-                  const [comuna, region] = clave.split('||')
-                  return (
-                    <tr key={clave}>
-                      <td>{comuna}</td>
-                      <td>{region}</td>
-                      <td>{cantidad}</td>
+          <section className="admin-tabla-seccion">
+            <h2>Comunas con más usuarios registrados</h2>
+            {usuarios.topComunas.length === 0 ? (
+              <p className="admin-tabla-vacia">Aún no hay suficientes datos de comunas.</p>
+            ) : (
+              <div className="admin-tabla-wrap table-responsive">
+                <table className="admin-tabla">
+                  <thead>
+                    <tr>
+                      <th>Comuna</th>
+                      <th>Región</th>
+                      <th>Usuarios</th>
                     </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+                  </thead>
+                  <tbody>
+                    {usuarios.topComunas.map((c) => (
+                      <tr key={`${c.comuna}-${c.region}`}>
+                        <td>{c.comuna}</td>
+                        <td>{c.region}</td>
+                        <td>{c.cantidad}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </>
+      ) : (
+        <SinServicio servicio="auth-service" />
+      )}
 
-      {/* -------- MASCOTAS -------- */}
+      {/* -------- MASCOTAS (mascota-service) -------- */}
       <h2 className="admin-reportes-subtitulo">Reporte de mascotas 🐾</h2>
       <section className="admin-kpis">
-        <TarjetaKpi icono="🐾" numero={mascotas.length} etiqueta="Mascotas registradas" />
-        <TarjetaKpi icono="⚠️" numero={mascotas.filter((m) => !m.completo).length} etiqueta="Con datos incompletos" />
-        <TarjetaKpi icono="🔔" numero={solicitudes.filter((s) => s.estado === 'pendiente').length} etiqueta="Solicitudes de cambio pendientes" />
-        <TarjetaKpi icono="🩺" numero={mascotas.filter((m) => m.estado === 'tratamiento').length} etiqueta="En tratamiento" />
+        <TarjetaKpi icono="🐾" numero={mascotas?.total ?? null} etiqueta="Mascotas registradas" />
+        <TarjetaKpi icono="⚠️" numero={mascotas?.conDatosIncompletos ?? null} etiqueta="Con datos incompletos" />
+        <TarjetaKpi icono="🔔" numero={mascotas?.solicitudesPendientes ?? null} etiqueta="Solicitudes de cambio pendientes" />
+        <TarjetaKpi icono="🩺" numero={mascotas?.porEstado.tratamiento ?? null} etiqueta="En tratamiento" />
       </section>
-      <section className="admin-graficos">
-        <Grafico titulo="Mascotas por especie" vacio={mascotas.length === 0}>
-          <Doughnut
-            options={opcionesDona}
-            data={{
-              labels: porEspecie.map(([e]) => e),
-              datasets: [
-                {
-                  data: porEspecie.map(([, n]) => n),
-                  backgroundColor: ['#D6ECFA', '#FFD6E7', '#E6D6F7', '#FFD6A5', '#C8F0D8', '#F7E6A1'],
-                  borderColor: '#2A2440',
-                  borderWidth: 3,
-                },
-              ],
-            }}
-          />
-        </Grafico>
-        <Grafico titulo="Mascotas por estado clínico" vacio={mascotas.length === 0}>
-          <Bar
-            options={opcionesBarras(false)}
-            data={{
-              labels: ['Control al día', 'En tratamiento', 'Vacunas pendientes'],
-              datasets: [
-                {
-                  label: 'Mascotas',
-                  data: [
-                    mascotas.filter((m) => m.estado === 'al-dia').length,
-                    mascotas.filter((m) => m.estado === 'tratamiento').length,
-                    mascotas.filter((m) => (m.estado || 'pendiente') === 'pendiente').length,
-                  ],
-                  backgroundColor: ['#C8F0D8', '#E6D6F7', '#FFD6A5'],
-                  borderRadius: 8,
-                },
-              ],
-            }}
-          />
-        </Grafico>
-      </section>
+      {mascotas ? (
+        <section className="admin-graficos">
+          <Grafico titulo="Mascotas por especie" vacio={mascotas.total === 0}>
+            <Doughnut
+              options={opcionesDona}
+              data={{
+                labels: mascotas.porEspecie.map((e) => e.nombre),
+                datasets: [
+                  {
+                    data: mascotas.porEspecie.map((e) => e.cantidad),
+                    backgroundColor: ['#D6ECFA', '#FFD6E7', '#E6D6F7', '#FFD6A5', '#C8F0D8', '#F7E6A1'],
+                    borderColor: '#2A2440',
+                    borderWidth: 3,
+                  },
+                ],
+              }}
+            />
+          </Grafico>
+          <Grafico titulo="Mascotas por estado clínico" vacio={mascotas.total === 0}>
+            <Bar
+              options={opcionesBarras(false)}
+              data={{
+                labels: ['Control al día', 'En tratamiento', 'Vacunas pendientes'],
+                datasets: [
+                  {
+                    label: 'Mascotas',
+                    data: [mascotas.porEstado.alDia, mascotas.porEstado.tratamiento, mascotas.porEstado.pendiente],
+                    backgroundColor: ['#C8F0D8', '#E6D6F7', '#FFD6A5'],
+                    borderRadius: 8,
+                  },
+                ],
+              }}
+            />
+          </Grafico>
+        </section>
+      ) : (
+        <SinServicio servicio="mascota-service" />
+      )}
 
-      {/* -------- CITAS -------- */}
+      {/* -------- CITAS (cita-service) -------- */}
       <h2 className="admin-reportes-subtitulo">Reporte de citas 📅</h2>
       <section className="admin-kpis">
-        <TarjetaKpi icono="📅" numero={citas.length} etiqueta="Citas totales" />
-        <TarjetaKpi icono="⏰" numero={citasPendientes} etiqueta="Pendientes" />
-        <TarjetaKpi icono="✅" numero={citasConfirmadas} etiqueta="Confirmadas" />
-        <TarjetaKpi icono="❌" numero={citasCanceladas} etiqueta="Canceladas" />
+        <TarjetaKpi icono="📅" numero={citas?.total ?? null} etiqueta="Citas totales" />
+        <TarjetaKpi icono="⏰" numero={citas?.pendientes ?? null} etiqueta="Pendientes" />
+        <TarjetaKpi icono="✅" numero={citas?.confirmadas ?? null} etiqueta="Confirmadas" />
+        <TarjetaKpi icono="❌" numero={citas?.canceladas ?? null} etiqueta="Canceladas" />
       </section>
-      <section className="admin-graficos">
-        <Grafico titulo="Citas por estado" vacio={citas.length === 0}>
-          <Doughnut
-            options={opcionesDona}
-            data={{
-              labels: ['Pendientes', 'Confirmadas', 'Canceladas'],
-              datasets: [
-                {
-                  data: [citasPendientes, citasConfirmadas, citasCanceladas],
-                  backgroundColor: ['#FFD6A5', '#C8F0D8', '#F0A0A0'],
-                  borderColor: '#2A2440',
-                  borderWidth: 3,
-                },
-              ],
-            }}
-          />
-        </Grafico>
-        <Grafico titulo="Servicios más solicitados" vacio={citas.length === 0}>
-          <Bar
-            options={opcionesBarras(true)}
-            data={{
-              labels: porServicio.map(([s]) => recortar(s, 24)),
-              datasets: [{ label: 'Citas', data: porServicio.map(([, n]) => n), backgroundColor: '#D6ECFA', borderRadius: 8 }],
-            }}
-          />
-        </Grafico>
+      {citas ? (
+        <section className="admin-graficos">
+          <Grafico titulo="Citas por estado" vacio={citas.total === 0}>
+            <Doughnut
+              options={opcionesDona}
+              data={{
+                labels: ['Pendientes', 'Confirmadas', 'Canceladas'],
+                datasets: [
+                  {
+                    data: [citas.pendientes, citas.confirmadas, citas.canceladas],
+                    backgroundColor: ['#FFD6A5', '#C8F0D8', '#F0A0A0'],
+                    borderColor: '#2A2440',
+                    borderWidth: 3,
+                  },
+                ],
+              }}
+            />
+          </Grafico>
+          <Grafico titulo="Servicios más solicitados" vacio={citas.porServicio.length === 0}>
+            <Bar
+              options={opcionesBarras(true)}
+              data={{
+                labels: citas.porServicio.map((s) => recortar(s.nombre, 24)),
+                datasets: [{ label: 'Citas', data: citas.porServicio.map((s) => s.cantidad), backgroundColor: '#D6ECFA', borderRadius: 8 }],
+              }}
+            />
+          </Grafico>
+        </section>
+      ) : (
+        <SinServicio servicio="cita-service" />
+      )}
+
+      {/* -------- CONTACTO Y NOTIFICACIONES -------- */}
+      <h2 className="admin-reportes-subtitulo">Contacto y avisos ✉️</h2>
+      <section className="admin-kpis">
+        <TarjetaKpi icono="✉️" numero={reporte.contacto?.total ?? null} etiqueta="Mensajes de contacto" to="/admin/mensajes" />
+        <TarjetaKpi icono="📨" numero={reporte.contacto?.pendiente ?? null} etiqueta="Mensajes sin revisar" to="/admin/mensajes" />
+        <TarjetaKpi icono="🔔" numero={reporte.notificaciones?.total ?? null} etiqueta="Avisos enviados" />
+        <TarjetaKpi icono="👀" numero={reporte.notificaciones?.noLeidas ?? null} etiqueta="Avisos sin leer" />
       </section>
 
       <div className="admin-reportes-exportar">
-        <Boton variante="exportar" onClick={exportarTodo}>
-          📤 Exportar reporte completo (Excel)
+        <Boton variante="exportar" onClick={exportarTodo} disabled={exportando}>
+          {exportando ? 'Preparando Excel…' : '📤 Exportar reporte completo (Excel)'}
         </Boton>
       </div>
     </>

@@ -5,8 +5,9 @@
      U → modal "Editar"            (actualizarUsuario)
      D → confirmación "Eliminar"   (eliminarUsuario)
    Toda la información que cambia está en useState; después de cada
-   operación se vuelve a leer la lista para reflejar los cambios. */
-import { useState } from 'react'
+   operación se vuelve a leer la lista para reflejar los cambios.
+   EP3: cada operación es una petición a auth-service (solo ADMIN). */
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { FiltrosUsuarios as Filtros, Usuario } from '../../types/usuario'
 import {
@@ -17,6 +18,7 @@ import {
   listarUsuarios,
 } from '../../services/usuariosService'
 import { useAuth } from '../../context/AuthContext'
+import { mensajeDeError } from '../../services/api'
 import { exportarUsuarios } from '../../utils/exportarExcel'
 import { EncabezadoAdmin } from '../../componentes/organismos/EncabezadoAdmin'
 import { FiltrosUsuarios } from '../../componentes/organismos/FiltrosUsuarios'
@@ -34,7 +36,9 @@ export default function UsuariosPage() {
   const { usuario: sesion, refrescarSesion } = useAuth()
   const navigate = useNavigate()
 
-  const [usuarios, setUsuarios] = useState<Usuario[]>(() => listarUsuarios())
+  const [usuarios, setUsuarios] = useState<Usuario[]>([])
+  const [cargando, setCargando] = useState(true)
+  const [errorCarga, setErrorCarga] = useState<string | null>(null)
   const [filtros, setFiltros] = useState<Filtros>(FILTROS_INICIALES)
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
   const [modal, setModal] = useState<EstadoModal>(null)
@@ -42,7 +46,30 @@ export default function UsuariosPage() {
   const [aviso, setAviso] = useState<string | null>(null)
 
   const visibles = filtrarUsuarios(usuarios, filtros)
-  const recargar = () => setUsuarios(listarUsuarios())
+
+  /** Vuelve a pedir la lista a auth-service (al entrar y después de cada cambio). */
+  const recargar = useCallback(async () => {
+    try {
+      setUsuarios(await listarUsuarios())
+      setErrorCarga(null)
+    } catch (error) {
+      setErrorCarga(mensajeDeError(error))
+    } finally {
+      setCargando(false)
+    }
+  }, [])
+
+  // Carga inicial (la promesa actualiza el estado cuando responde auth-service)
+  useEffect(() => {
+    let activo = true
+    listarUsuarios()
+      .then((lista) => activo && setUsuarios(lista))
+      .catch((error) => activo && setErrorCarga(mensajeDeError(error)))
+      .finally(() => activo && setCargando(false))
+    return () => {
+      activo = false
+    }
+  }, [])
 
   /* ---------- Selección (checkboxes) ---------- */
   const seleccionar = (id: string, marcado: boolean) => {
@@ -57,36 +84,37 @@ export default function UsuariosPage() {
     setSeleccionados(marcado ? new Set(visibles.map((u) => u.id)) : new Set())
 
   /* ---------- CREAR ---------- */
-  const crear = (datos: DatosFormularioUsuario) => {
+  const crear = async (datos: DatosFormularioUsuario) => {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password2, ...nuevo } = datos
-    const resultado = crearUsuario(nuevo)
+    const resultado = await crearUsuario(nuevo)
     if (!resultado.ok) return { campo: resultado.campo, mensaje: resultado.mensaje }
-    recargar()
+    await recargar()
     setModal(null)
     setAviso(`Usuario ${resultado.dato.nombre} creado correctamente.`)
   }
 
   /* ---------- ACTUALIZAR ---------- */
-  const editar = (id: string) => (datos: DatosFormularioUsuario) => {
+  const editar = (id: string) => async (datos: DatosFormularioUsuario) => {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password2, run, ...cambios } = datos // el RUN no se modifica
-    const resultado = actualizarUsuario(id, cambios)
+    const resultado = await actualizarUsuario(id, cambios)
     if (!resultado.ok) return { campo: resultado.campo, mensaje: resultado.mensaje }
     if (resultado.dato.id === sesion?.id) refrescarSesion(resultado.dato) // si el admin se editó a sí mismo
-    recargar()
+    await recargar()
     setModal(null)
     setAviso(`Cambios de ${resultado.dato.nombre} guardados.`)
   }
 
   /* ---------- ELIMINAR ---------- */
-  const confirmarEliminacion = () => {
+  const confirmarEliminacion = async () => {
     if (!aEliminar) return
-    eliminarUsuario(aEliminar.id)
-    seleccionar(aEliminar.id, false)
-    setAviso(`Usuario ${aEliminar.nombre} eliminado.`)
+    const resultado = await eliminarUsuario(aEliminar.id)
+    // Ej: las cuentas fijas del sistema no se pueden eliminar (lo decide el backend)
+    setAviso(resultado.ok ? `Usuario ${aEliminar.nombre} eliminado.` : resultado.mensaje)
+    if (resultado.ok) seleccionar(aEliminar.id, false)
     setAEliminar(null)
-    recargar()
+    await recargar()
   }
 
   return (
@@ -126,7 +154,17 @@ export default function UsuariosPage() {
         totalResultados={visibles.length}
       />
 
-      <section className="admin-tabla-seccion">
+      {errorCarga && (
+        <div className="admin-aviso admin-aviso--error" role="alert">
+          {errorCarga}
+          <button type="button" onClick={recargar} aria-label="Reintentar">
+            ↻
+          </button>
+        </div>
+      )}
+
+      <section className="admin-tabla-seccion" aria-busy={cargando}>
+        {cargando && <p className="admin-tabla-vacia">Cargando usuarios…</p>}
         <TablaUsuarios
           usuarios={visibles}
           idSesion={sesion?.id}
