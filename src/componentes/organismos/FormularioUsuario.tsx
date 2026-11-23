@@ -46,8 +46,11 @@ export type ErrorFormularioUsuario = { campo: string; mensaje: string }
 export interface FormularioUsuarioProps {
   modo: ModoFormularioUsuario
   valoresIniciales?: Partial<Usuario>
-  /** Devuelve un error (ej. correo duplicado) o nada si se guardó bien. */
-  onSubmit: (datos: DatosFormularioUsuario) => ErrorFormularioUsuario | void
+  /** Devuelve un error (ej. correo duplicado) o nada si se guardó bien.
+      Puede ser asíncrono (EP3: se guarda en auth-service). */
+  onSubmit: (
+    datos: DatosFormularioUsuario,
+  ) => ErrorFormularioUsuario | void | Promise<ErrorFormularioUsuario | void>
   onCancelar?: () => void
   textoBoton?: string
 }
@@ -104,6 +107,7 @@ export function FormularioUsuario({
     activo: valoresIniciales.activo ?? true,
   })
   const [errores, setErrores] = useState<Errores>({})
+  const [enviando, setEnviando] = useState(false) // evita doble envío mientras responde el servidor
 
   // Función "fábrica": devuelve el manejador de cambio de cada campo
   const cambiar = (campo: CampoTexto) => (valor: string) => {
@@ -111,14 +115,19 @@ export function FormularioUsuario({
     setErrores((prev) => ({ ...prev, [campo]: null }))
   }
 
-  const enviar = (e: FormEvent) => {
+  const enviar = async (e: FormEvent) => {
     e.preventDefault()
     const nuevosErrores = validarFormularioUsuario(datos, modo)
     setErrores(nuevosErrores)
     if (hayErrores(nuevosErrores)) return
 
-    const errorServicio = onSubmit({ ...datos, correo: datos.correo.trim(), run: datos.run.trim() })
-    if (errorServicio) setErrores({ [errorServicio.campo]: errorServicio.mensaje })
+    setEnviando(true)
+    try {
+      const errorServicio = await onSubmit({ ...datos, correo: datos.correo.trim(), run: datos.run.trim() })
+      if (errorServicio) setErrores({ [errorServicio.campo]: errorServicio.mensaje })
+    } finally {
+      setEnviando(false)
+    }
   }
 
   // Títulos de sección solo en los formularios del admin (diseño de la EP1)
@@ -283,7 +292,7 @@ export function FormularioUsuario({
       )}
 
       <div className={esAdmin ? 'admin-panel-editar-botones' : 'd-flex flex-wrap gap-3'}>
-        <Boton type="submit" flecha>
+        <Boton type="submit" flecha disabled={enviando}>
           {textoBoton ?? (modo === 'registro' ? 'Registrarme' : modo === 'crear' ? 'Crear usuario' : 'Guardar cambios')}
         </Boton>
         {onCancelar && (

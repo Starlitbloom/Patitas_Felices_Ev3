@@ -1,25 +1,23 @@
 /* PÁGINA (contenedor) — Registro (antes registro.html).
-   Crea el usuario con el servicio, inicia sesión y lleva al perfil. */
+   EP3: crea la cuenta en auth-service (POST /auth/registro), que la deja
+   como cliente y responde con el token: la sesión queda iniciada de inmediato. */
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { crearUsuario } from '../services/usuariosService'
 import { FormularioUsuario, type DatosFormularioUsuario } from '../componentes/organismos/FormularioUsuario'
 import { Etiqueta } from '../componentes/atomos/Etiqueta'
 
 export default function RegistroPage() {
-  const { iniciarSesion } = useAuth()
+  const { registrarse } = useAuth()
   const navigate = useNavigate()
   // Página que la persona quería ver antes de registrarse (ej.: Solicitar cita con una hora elegida)
   const desde = (useLocation().state as { desde?: string } | null)?.desde
 
-  const registrar = (datos: DatosFormularioUsuario) => {
+  const registrar = async (datos: DatosFormularioUsuario) => {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password2, ...resto } = datos
-    const resultado = crearUsuario({ ...resto, rol: 'cliente', activo: true })
+    const resultado = await registrarse({ ...resto, rol: 'cliente', activo: true })
     if (!resultado.ok) return { campo: resultado.campo, mensaje: resultado.mensaje }
-
-    iniciarSesion(datos.correo, datos.password) // registro exitoso = sesión iniciada
-    navigate(desde ?? '/perfil')
+    navigate(desde ?? '/perfil') // registro exitoso = sesión iniciada
   }
 
   return (

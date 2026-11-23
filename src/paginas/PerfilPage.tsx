@@ -1,9 +1,10 @@
 /* PÁGINA (contenedor) — Mi perfil (antes perfil.html).
+   EP3: los cambios de datos y de foto se guardan en auth-service (PUT /usuarios/{id}).
    Estado de la página:
      - editando: alterna entre vista de solo lectura y formulario
      - errorAvatar: mensaje si la foto no se pudo guardar */
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { actualizarUsuario } from '../services/usuariosService'
 import { listarCitasDe } from '../services/datosEquipoService'
@@ -46,8 +47,9 @@ export default function PerfilPage() {
     detalle: c.estado || 'Pendiente',
   }))
 
-  const guardar = (datos: DatosFormularioUsuario) => {
-    const resultado = actualizarUsuario(usuario.id, {
+  const guardar = async (datos: DatosFormularioUsuario) => {
+    const correoAnterior = usuario.correo
+    const resultado = await actualizarUsuario(usuario.id, {
       nombre: datos.nombre.trim(),
       apellidos: datos.apellidos.trim(),
       correo: datos.correo,
@@ -58,6 +60,13 @@ export default function PerfilPage() {
       password: datos.password, // vacío = se mantiene la actual
     })
     if (!resultado.ok) return { campo: resultado.campo, mensaje: resultado.mensaje }
+
+    // El token JWT lleva el correo dentro: si se cambió, hay que volver a iniciar sesión
+    if (resultado.dato.correo.toLowerCase() !== correoAnterior.toLowerCase()) {
+      cerrarSesion()
+      navigate('/login', { replace: true })
+      return
+    }
     refrescarSesion(resultado.dato)
     setEditando(false)
   }
@@ -67,8 +76,9 @@ export default function PerfilPage() {
     if (error) return setErrorAvatar(error)
     try {
       const base64 = await redimensionarImagen(archivo)
-      const resultado = actualizarUsuario(usuario.id, { avatar: base64 })
-      if (resultado.ok) refrescarSesion(resultado.dato)
+      const resultado = await actualizarUsuario(usuario.id, { avatar: base64 })
+      if (!resultado.ok) return setErrorAvatar(resultado.mensaje)
+      refrescarSesion(resultado.dato)
       setErrorAvatar(null)
     } catch {
       setErrorAvatar('No se pudo guardar la imagen. Prueba con otra foto.')
@@ -132,6 +142,9 @@ export default function PerfilPage() {
         />
 
         <p className="perfil-cerrar-sesion-wrap">
+          <Link to="/mis-mensajes" className="perfil-card-link me-3">
+            ✉️ Mis mensajes de contacto
+          </Link>
           <Boton
             onClick={() => {
               cerrarSesion()

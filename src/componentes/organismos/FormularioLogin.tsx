@@ -16,20 +16,22 @@ type CampoLogin = keyof DatosLogin
 export type ErrorLogin = { campo: CampoLogin; mensaje: string }
 
 export interface FormularioLoginProps {
-  /** Devuelve un error si las credenciales no son válidas, o nada si todo salió bien. */
-  onSubmit: (datos: DatosLogin) => ErrorLogin | void
+  /** Devuelve un error si las credenciales no son válidas, o nada si todo salió bien.
+      Puede ser asíncrono (EP3: el login se valida en auth-service). */
+  onSubmit: (datos: DatosLogin) => ErrorLogin | void | Promise<ErrorLogin | void>
 }
 
 export function FormularioLogin({ onSubmit }: FormularioLoginProps) {
   const [datos, setDatos] = useState<DatosLogin>({ correo: '', password: '' })
   const [errores, setErrores] = useState<Partial<Record<CampoLogin, string | null>>>({})
+  const [enviando, setEnviando] = useState(false) // evita doble clic mientras responde el servidor
 
   const cambiar = (campo: CampoLogin) => (valor: string) => {
     setDatos((prev) => ({ ...prev, [campo]: valor }))
     setErrores((prev) => ({ ...prev, [campo]: null })) // al escribir se limpia el error del campo
   }
 
-  const enviar = (e: FormEvent) => {
+  const enviar = async (e: FormEvent) => {
     e.preventDefault()
     const nuevosErrores = {
       correo: validarCorreo(datos.correo),
@@ -38,8 +40,13 @@ export function FormularioLogin({ onSubmit }: FormularioLoginProps) {
     setErrores(nuevosErrores)
     if (nuevosErrores.correo || nuevosErrores.password) return
 
-    const error = onSubmit({ correo: datos.correo.trim(), password: datos.password })
-    if (error) setErrores({ [error.campo]: error.mensaje })
+    setEnviando(true)
+    try {
+      const error = await onSubmit({ correo: datos.correo.trim(), password: datos.password })
+      if (error) setErrores({ [error.campo]: error.mensaje })
+    } finally {
+      setEnviando(false)
+    }
   }
 
   return (
@@ -73,8 +80,8 @@ export function FormularioLogin({ onSubmit }: FormularioLoginProps) {
         autoComplete="current-password"
       />
 
-      <Boton type="submit" variante="degradado" flecha>
-        Iniciar sesión
+      <Boton type="submit" variante="degradado" flecha disabled={enviando}>
+        {enviando ? 'Ingresando…' : 'Iniciar sesión'}
       </Boton>
     </form>
   )

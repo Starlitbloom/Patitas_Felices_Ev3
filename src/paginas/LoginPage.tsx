@@ -1,6 +1,8 @@
 /* PÁGINA (contenedor) — Inicio de sesión (antes login.html).
    El formulario solo valida y avisa; esta página decide qué hacer:
-   autenticar con el contexto y redirigir según el rol. */
+   autenticar con el contexto y redirigir según el rol.
+   EP3: el correo y la contraseña se verifican en auth-service, que
+   devuelve el token JWT y el rol del usuario. */
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { FormularioLogin, type DatosLogin, type ErrorLogin } from '../componentes/organismos/FormularioLogin'
@@ -11,8 +13,8 @@ export default function LoginPage() {
   const location = useLocation()
   const desde = (location.state as { desde?: string } | null)?.desde
 
-  const manejarLogin = ({ correo, password }: DatosLogin): ErrorLogin | void => {
-    const resultado = iniciarSesion(correo, password)
+  const manejarLogin = async ({ correo, password }: DatosLogin): Promise<ErrorLogin | void> => {
+    const resultado = await iniciarSesion(correo, password)
     if (!resultado.ok) return { campo: resultado.campo as ErrorLogin['campo'], mensaje: resultado.mensaje }
     // Personal de la clínica (admin o recepcionista) va al panel;
     // el dueño de mascota vuelve a la página que quería ver o a su perfil

@@ -1,4 +1,6 @@
 /* =========================================================
+   Datos de ejemplo. EP3: ya no se cargan en la app (los usuarios viven
+   en auth-service); se usan como datos de prueba en src/tests.
    Datos simulados iniciales.
    Se cargan solo la primera vez (cuando localStorage está
    vacío), para que el panel admin tenga registros con los

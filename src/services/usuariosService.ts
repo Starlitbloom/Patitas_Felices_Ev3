@@ -1,112 +1,111 @@
 /* =========================================================
-   usuariosService — fuente de datos simulada del módulo de usuarios.
-   Implementa el CRUD completo sobre localStorage:
-     C → crearUsuario
-     R → listarUsuarios / obtenerUsuarioPorId / obtenerUsuarioPorCorreo
-     U → actualizarUsuario
-     D → eliminarUsuario
-   Además: filtros de búsqueda y carga de datos iniciales.
-   Las páginas NUNCA leen localStorage directamente: siempre
-   pasan por este módulo.
+   usuariosService — módulo de usuarios conectado a auth-service.
+   EP3: ya no usa localStorage; cada operación es una petición HTTP:
+     C → crearUsuario         POST   /usuarios        (solo ADMIN)
+     R → listarUsuarios        GET    /usuarios        (solo ADMIN)
+         obtenerUsuarioPorId   GET    /usuarios/{id}
+     U → actualizarUsuario     PUT    /usuarios/{id}
+     D → eliminarUsuario       DELETE /usuarios/{id}   (solo ADMIN)
+   Los permisos los decide el backend según el rol del token.
+   Las páginas siguen recibiendo el mismo tipo Usuario de siempre:
+   este archivo traduce entre el formato de la API y el del frontend.
 ========================================================= */
-import type {
-  CambiosUsuario,
-  FiltrosUsuarios,
-  NuevoUsuario,
-  ResultadoOperacion,
-  Usuario,
-} from '../types/usuario'
-import { CUENTAS_FIJAS, CLIENTES_EJEMPLO } from '../data/usuariosIniciales'
-import { CLAVES, guardarColeccion, leerColeccion } from './almacenamiento'
-import { limpiarRun } from '../utils/validaciones'
+import type { CambiosUsuario, FiltrosUsuarios, NuevoUsuario, ResultadoOperacion, Rol, Usuario, UsuarioApi } from '../types/usuario'
+import { ApiError, mensajeDeError, pedir } from './api'
 
-/** Genera un id único y corto (ej: "u-lz3k9a-4f2c"). */
-export function generarId(): string {
-  return `u-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
+/* ---------------- Conversión API ⇄ frontend ---------------- */
+
+/** Respuesta de auth-service → Usuario del frontend. */
+export function desdeApi(u: UsuarioApi): Usuario {
+  return {
+    id: String(u.id),
+    run: u.run,
+    nombre: u.nombre,
+    apellidos: u.apellidos,
+    correo: u.correo,
+    password: '', // nunca viene del backend
+    telefono: u.telefono ?? '',
+    region: u.region ?? '',
+    comuna: u.comuna ?? '',
+    direccion: u.direccion ?? '',
+    rol: u.rol.nombre.toLowerCase() as Rol, // "ADMIN" → "admin"
+    activo: u.activo !== false,
+    avatar: u.avatar ?? undefined,
+    fechaRegistro: u.fechaRegistro ?? '',
+  }
 }
 
-const mismoCorreo = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase()
+/** Datos del frontend → cuerpo que espera auth-service. */
+export function haciaApi(datos: CambiosUsuario): Record<string, unknown> {
+  const { rol, password, ...resto } = datos
+  const cuerpo: Record<string, unknown> = { ...resto }
+  if (rol) cuerpo.rol = { nombre: rol.toUpperCase() } // "admin" → { nombre: "ADMIN" }
+  if (password) cuerpo.password = password // vacía = no se cambia
+  return cuerpo
+}
+
+/** Convierte un error de la API en el resultado que entienden los formularios. */
+export function aResultadoError(error: unknown, campoPorDefecto = 'correo'): { ok: false; campo: string; mensaje: string } {
+  const campo = error instanceof ApiError && error.campo ? error.campo : campoPorDefecto
+  return { ok: false, campo, mensaje: mensajeDeError(error) }
+}
 
 /* ---------------- LEER (Read) ---------------- */
 
-export function listarUsuarios(): Usuario[] {
-  return leerColeccion<Usuario>(CLAVES.usuarios)
+export async function listarUsuarios(): Promise<Usuario[]> {
+  const usuarios = await pedir<UsuarioApi[]>('auth', '/usuarios')
+  return usuarios.map(desdeApi)
 }
 
-export function obtenerUsuarioPorId(id: string): Usuario | null {
-  return listarUsuarios().find((u) => u.id === id) ?? null
+/** Devuelve null si el usuario no existe (404). */
+export async function obtenerUsuarioPorId(id: string): Promise<Usuario | null> {
+  try {
+    return desdeApi(await pedir<UsuarioApi>('auth', `/usuarios/${encodeURIComponent(id)}`))
+  } catch (error) {
+    if (error instanceof ApiError && (error.status === 404 || error.status === 400)) return null
+    throw error
+  }
 }
 
-export function obtenerUsuarioPorCorreo(correo: string): Usuario | null {
-  return listarUsuarios().find((u) => u.correo && mismoCorreo(u.correo, correo)) ?? null
-}
+/* ---------------- CREAR (Create) — panel admin ---------------- */
 
-/* ---------------- CREAR (Create) ---------------- */
-
-export function crearUsuario(datos: NuevoUsuario): ResultadoOperacion<Usuario> {
-  const usuarios = listarUsuarios()
-
-  if (usuarios.some((u) => mismoCorreo(u.correo, datos.correo))) {
-    return { ok: false, campo: 'correo', mensaje: 'Ya existe una cuenta registrada con este correo.' }
+export async function crearUsuario(datos: NuevoUsuario): Promise<ResultadoOperacion<Usuario>> {
+  try {
+    const creado = await pedir<UsuarioApi>('auth', '/usuarios', { metodo: 'POST', cuerpo: { ...haciaApi(datos), password: datos.password } })
+    return { ok: true, dato: desdeApi(creado) }
+  } catch (error) {
+    return aResultadoError(error)
   }
-  if (usuarios.some((u) => limpiarRun(u.run) === limpiarRun(datos.run))) {
-    return { ok: false, campo: 'run', mensaje: 'Ya existe una cuenta registrada con este RUN.' }
-  }
-
-  const nuevo: Usuario = {
-    ...datos,
-    correo: datos.correo.trim(),
-    id: generarId(),
-    fechaRegistro: new Date().toISOString(),
-  }
-  guardarColeccion(CLAVES.usuarios, [...usuarios, nuevo])
-  return { ok: true, dato: nuevo }
 }
 
 /* ---------------- ACTUALIZAR (Update) ---------------- */
 
-export function actualizarUsuario(id: string, cambios: CambiosUsuario): ResultadoOperacion<Usuario> {
-  const usuarios = listarUsuarios()
-  const indice = usuarios.findIndex((u) => u.id === id)
-  if (indice === -1) {
-    return { ok: false, campo: 'id', mensaje: 'El usuario no existe.' }
+export async function actualizarUsuario(id: string, cambios: CambiosUsuario): Promise<ResultadoOperacion<Usuario>> {
+  try {
+    const actualizado = await pedir<UsuarioApi>('auth', `/usuarios/${encodeURIComponent(id)}`, {
+      metodo: 'PUT',
+      cuerpo: haciaApi(cambios),
+    })
+    return { ok: true, dato: desdeApi(actualizado) }
+  } catch (error) {
+    return aResultadoError(error)
   }
-
-  // El nuevo correo no puede pertenecer a OTRO usuario
-  if (cambios.correo && usuarios.some((u) => u.id !== id && mismoCorreo(u.correo, cambios.correo!))) {
-    return { ok: false, campo: 'correo', mensaje: 'Ese correo ya está en uso por otra cuenta.' }
-  }
-
-  // Si la contraseña viene vacía se conserva la anterior
-  const { password, ...resto } = cambios
-  const actualizado: Usuario = {
-    ...usuarios[indice],
-    ...resto,
-    ...(password ? { password } : {}),
-  }
-  const copia = [...usuarios]
-  copia[indice] = actualizado
-  guardarColeccion(CLAVES.usuarios, copia)
-  return { ok: true, dato: actualizado }
 }
 
 /* ---------------- ELIMINAR (Delete) ---------------- */
 
-/** Devuelve true si se eliminó, false si el id no existía. */
-export function eliminarUsuario(id: string): boolean {
-  const usuarios = listarUsuarios()
-  const restantes = usuarios.filter((u) => u.id !== id)
-  if (restantes.length === usuarios.length) return false
-  guardarColeccion(CLAVES.usuarios, restantes)
-  return true
+export async function eliminarUsuario(id: string): Promise<ResultadoOperacion<true>> {
+  try {
+    await pedir<void>('auth', `/usuarios/${encodeURIComponent(id)}`, { metodo: 'DELETE' })
+    return { ok: true, dato: true }
+  } catch (error) {
+    return aResultadoError(error, 'id')
+  }
 }
 
-/* ---------------- FILTROS DE BÚSQUEDA ---------------- */
+/* ---------------- FILTRAR (búsqueda en pantalla, sin llamar a la API) ---------------- */
 
-/**
- * Aplica búsqueda por texto (RUN, nombre, apellidos o correo),
- * filtro por rol y orden. No modifica el arreglo original.
- */
+/** Aplica texto, rol y orden al listado ya cargado. */
 export function filtrarUsuarios(usuarios: Usuario[], filtros: FiltrosUsuarios): Usuario[] {
   const texto = filtros.texto.trim().toLowerCase()
   let resultado = usuarios.filter((u) => {
@@ -124,44 +123,4 @@ export function filtrarUsuarios(usuarios: Usuario[], filtros: FiltrosUsuarios): 
     resultado = [...resultado].sort((a, b) => b.fechaRegistro.localeCompare(a.fechaRegistro))
   }
   return resultado
-}
-
-/* ---------------- DATOS INICIALES ---------------- */
-
-/**
- * Se ejecuta al iniciar la app:
- * 1. Si no hay usuarios, carga los datos de ejemplo.
- * 2. Completa campos faltantes de usuarios antiguos de la EP1 (id, activo, fecha).
- * 3. Garantiza que las cuentas fijas (admins y recepcionista) existan con su rol y contraseña.
- */
-export function asegurarDatosIniciales(): void {
-  let usuarios = listarUsuarios()
-  if (usuarios.length === 0) {
-    usuarios = [...CUENTAS_FIJAS, ...CLIENTES_EJEMPLO]
-  }
-
-  usuarios = usuarios.map((u) => ({
-    ...u,
-    id: u.id ?? generarId(),
-    rol: u.rol ?? 'cliente',
-    activo: u.activo !== false,
-    fechaRegistro: u.fechaRegistro ?? new Date(0).toISOString(),
-    telefono: u.telefono ?? '',
-    region: u.region ?? '',
-    comuna: u.comuna ?? '',
-    direccion: u.direccion ?? '',
-  }))
-
-  CUENTAS_FIJAS.forEach((cuenta) => {
-    const existente = usuarios.find((u) => u.correo && mismoCorreo(u.correo, cuenta.correo))
-    if (existente) {
-      existente.rol = cuenta.rol
-      existente.password = cuenta.password
-      existente.activo = true
-    } else {
-      usuarios.push({ ...cuenta })
-    }
-  })
-
-  guardarColeccion(CLAVES.usuarios, usuarios)
 }
