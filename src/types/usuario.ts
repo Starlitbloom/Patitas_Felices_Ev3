@@ -20,14 +20,14 @@ export const NOMBRE_ROL: Record<Rol, string> = {
   cliente: 'Dueño/a de mascota',
 }
 
-/** Usuario tal como se guarda en la fuente de datos (localStorage). */
+/** Usuario tal como lo usa el frontend (adaptado desde la respuesta de auth-service). */
 export interface Usuario {
-  id: string
+  id: string // el backend usa un número; aquí se guarda como texto para no cambiar los componentes
   run: string
   nombre: string
   apellidos: string
   correo: string
-  password: string
+  password: string // el backend NUNCA la devuelve: llega vacía y solo se usa al crear o editar
   telefono: string
   region: string
   comuna: string
@@ -36,6 +36,32 @@ export interface Usuario {
   activo: boolean
   avatar?: string // foto comprimida en base64 (opcional)
   fechaRegistro: string // ISO, la usa el KPI "Nuevos esta semana"
+}
+
+/** Usuario tal como lo responde auth-service (GET /usuarios, /auth/me, login). */
+export interface UsuarioApi {
+  id: number
+  run: string
+  nombre: string
+  apellidos: string
+  correo: string
+  telefono: string | null
+  region: string | null
+  comuna: string | null
+  direccion: string | null
+  activo: boolean
+  avatar: string | null
+  rol: { id?: number; nombre: string; descripcion?: string }
+  fechaRegistro: string | null
+}
+
+/** Respuesta de login, registro y refresh en auth-service. */
+export interface RespuestaAuth {
+  token: string
+  refreshToken: string
+  tipo: string
+  expiraEnMs: number
+  usuario: UsuarioApi
 }
 
 /** Datos necesarios para crear un usuario (el servicio genera id y fecha). */
