@@ -1,4 +1,3 @@
-
 /* =========================================================
    PATITAS FELICES - SOLICITAR CITA 
 
@@ -16,25 +15,28 @@ import { Link, useSearchParams } from 'react-router-dom'
 
 import {registrarMascotaDesdeCita} from '../../services/registroMascotaCitaService'
 import { listarMascotasPorDueno } from '../../services/mascotasService'
-import { veterinariosPorServicio } from '../../services/catalogoCitasService'
+
 
 
 import { useAuth } from '../../context/AuthContext'
 
+
 import {
-  crearCita,
   fechaLocalHoy,
-  HORARIOS_CITAS,
-  horasOcupadas
+  HORARIOS_CITAS
 } from '../../services/citasService'
 
 import {
-  obtenerVeterinarioPorId
-} from '../../services/veterinariosService'
+  solicitarCitaApi
+} from '../../services/citasApiService'
+
+import {
+  ApiError,
+  mensajeDeError
+} from '../../services/api'
 
 import {
   agruparServiciosCita,
-  citaCompatibleConCatalogo,
   obtenerEspecieCita,
   obtenerServicioCita,
   profesionalPorConfirmar,
@@ -43,6 +45,16 @@ import {
 } from '../../services/catalogoCitasService'
 
 import SelectorVeterinarioCita from './SelectorVeterinarioCita'
+
+import {
+  consultarVeterinariosApi,
+} from '../../services/veterinariosService'
+
+/**
+ * Consulta los veterinarios registrados en MySQL
+ * mediante veterinario-service (puerto 8085).
+ */
+
 
 import type { Veterinario } from '../../types/veterinario'
 
@@ -262,10 +274,22 @@ function esFutura(
    9. VALIDAR TODOS LOS CAMPOS DEL FORMULARIO
 ========================================================= */
 
+
+/**
+ * Valida los campos utilizando los veterinarios
+ * reales obtenidos desde MySQL.
+ *
+ * @param campo Campo que se está validando.
+ * @param datos Información ingresada en el formulario.
+ * @param ocupadas Horarios registrados localmente;
+ *                 su consulta se migrará al backend.
+ * @param veterinariosApi Profesionales de MySQL.
+ */
 function validar(
   campo: Campo,
   datos: DatosCita,
-  ocupadas: string[]
+  ocupadas: string[],
+  veterinariosApi: Veterinario[]
 ): string {
 
   const especie = obtenerEspecieCita(
@@ -273,12 +297,17 @@ function validar(
     datos.otraEspecie
   )
 
-  const medico =
-    datos.veterinarioId == null
-      ? null
-      : obtenerVeterinarioPorId(
-          datos.veterinarioId
-        )
+  
+/* Buscar al veterinario por su ID real de MySQL. */
+
+const medico =
+  datos.veterinarioId == null
+    ? null
+    : veterinariosApi.find(
+        (veterinario) =>
+          veterinario.id === datos.veterinarioId
+      ) ?? null
+
 
   switch (campo) {
 
@@ -433,37 +462,65 @@ function validar(
 
     /* Veterinario compatible */
 
-    case 'veterinarioId': {
+    
+/* =====================================================
+   VETERINARIO SELECCIONADO
 
-      if (
-        !medico ||
-        datos.veterinarioId == null
-      ) {
-        return 'Selecciona un veterinario.'
-      }
+   Comprueba:
+   - Que el profesional exista en MySQL.
+   - Que sea médico veterinario.
+   - Que atienda la especie seleccionada.
+   - Que trabaje en la fecha elegida.
 
-      if (
-        !citaCompatibleConCatalogo(
-          especie,
-          datos.servicio,
-          datos.veterinarioId
-        )
-      ) {
-        return 'Este médico no realiza el servicio seleccionado para esta especie.'
-      }
+   La disponibilidad y las reglas definitivas
+   de reserva las valida cita-service.
+===================================================== */
 
-      if (
-        datos.fecha &&
-        !atiendeDia(
-          medico,
-          datos.fecha
-        )
-      ) {
-        return `${medico.nombre} no atiende ese día.`
-      }
+case 'veterinarioId': {
 
-      return ''
-    }
+  if (
+    !medico ||
+    datos.veterinarioId == null
+  ) {
+    return 'Selecciona un veterinario.'
+  }
+
+  if (medico.cargo !== 'Médico veterinario') {
+    return 'Selecciona un médico veterinario.'
+  }
+
+ 
+/* =====================================================
+   VALIDAR ESPECIE DEL VETERINARIO
+
+   El formulario usa: Perro, Gato, Ave, Conejo.
+   MySQL usa: Perros, Gatos, Aves, Conejos.
+
+   Normalizamos los nombres para compararlos.
+===================================================== */
+
+if (
+  !especie ||
+  !medico.especies.some(
+    (especieAtendida) =>
+      especieAtendida.toLowerCase().replace(/s$/, '') ===
+      especie.toLowerCase()
+  )
+) {
+  return 'Este veterinario no atiende la especie seleccionada.'
+}
+
+
+  if (
+    datos.fecha &&
+    !atiendeDia(medico, datos.fecha)
+  ) {
+    return `${medico.nombre} no atiende ese día.`
+  }
+
+  return ''
+}
+
 
 
     /* Fecha según días de atención */
@@ -609,12 +666,9 @@ function leerPreferencia(
   const hora =
     parametros.get('hora') ?? ''
 
-  const medico =
-    obtenerVeterinarioPorId(veterinarioId)
-
   if (
-    !medico ||
-    medico.cargo !== 'Médico veterinario' ||
+    !Number.isInteger(veterinarioId) ||
+    veterinarioId <= 0 ||
     !convertirFecha(fecha) ||
     fecha < fechaLocalHoy() ||
     !HORARIOS_CITAS.some(
@@ -758,6 +812,74 @@ export default function FormularioSolicitarCita() {
 
   const [errorGeneral, setErrorGeneral] =
     useState('')
+  
+const [enviando, setEnviando] =
+  useState(false)
+
+
+/* =====================================================
+   VETERINARIOS REGISTRADOS EN MYSQL
+
+   Consultamos los profesionales reales mediante
+   veterinario-service, puerto 8085.
+
+   Estos datos reemplazarán progresivamente
+   a los profesionales simulados del frontend.
+===================================================== */
+
+const [veterinariosApi, setVeterinariosApi] =
+  useState<Veterinario[]>([])
+
+const [cargandoVeterinarios, setCargandoVeterinarios] =
+  useState(true)
+
+const [errorVeterinarios, setErrorVeterinarios] =
+  useState('')
+
+useEffect(() => {
+
+  let activo = true
+
+  async function cargarVeterinarios() {
+
+    try {
+
+      const profesionales =
+        await consultarVeterinariosApi()
+
+      if (!activo) return
+
+      setVeterinariosApi(profesionales)
+      setErrorVeterinarios('')
+
+    } catch {
+
+      if (!activo) return
+
+      setVeterinariosApi([])
+
+      setErrorVeterinarios(
+        'No se pudo cargar el equipo veterinario. ' +
+        'Comprueba que veterinario-service esté encendido.'
+      )
+
+    } finally {
+
+      if (activo) {
+        setCargandoVeterinarios(false)
+      }
+
+    }
+  }
+
+  void cargarVeterinarios()
+
+  return () => {
+    activo = false
+  }
+
+}, [])
+
 
 
 /* =========================================
@@ -944,34 +1066,8 @@ function elegirMascotaRegistrada(idMascota: string) {
   /* Cuando hay una hora elegida desde la agenda,
      filtramos los servicios de ese médico. */
 
-  const serviciosVisibles = preferencia
-
-    ? Object.fromEntries(
-        Object.entries(gruposServicio)
-
-          .map(([grupo, servicios]) => [
-
-            grupo,
-
-            servicios.filter(
-              (servicio) =>
-                citaCompatibleConCatalogo(
-                  especie,
-                  servicio.nombre,
-                  preferencia.veterinarioId
-                )
-            )
-
-          ] as const)
-
-          .filter(
-            ([, servicios]) =>
-              servicios.length > 0
-          )
-      )
-
-    : gruposServicio
-
+  // Los servicios se filtran por especie; no cruzamos IDs reales con el catálogo simulado.
+  const serviciosVisibles = gruposServicio
 
   /* Servicio con sus datos, precio y duración. */
 
@@ -990,28 +1086,29 @@ function elegirMascotaRegistrada(idMascota: string) {
      16. OBTENER VETERINARIO Y HORAS OCUPADAS
   ===================================================== */
 
-  const medico =
-    datos.veterinarioId == null
+/* =====================================================
+   VETERINARIO SELECCIONADO DESDE MYSQL
 
-      ? null
+   Busca al profesional por su ID real,
+   utilizando la lista obtenida de Spring Boot.
 
-      : obtenerVeterinarioPorId(
-          datos.veterinarioId
-        )
+   Esto evita confundir a Camila González (ID 2)
+   con los veterinarios simulados.
+===================================================== */
+
+const medico =
+  datos.veterinarioId == null
+    ? null
+    : veterinariosApi.find(
+        (veterinario) =>
+          veterinario.id === datos.veterinarioId
+      ) ?? null
 
 
-  const ocupadas =
-    datos.fecha &&
-    datos.veterinarioId != null
-
-      ? horasOcupadas(
-          datos.fecha,
-          undefined,
-          datos.veterinarioId,
-          datos.servicio
-        )
-
-      : []
+  
+// La ocupación confirmada debe obtenerse de cita-service; la API actual
+// no publica disponibilidad. De momento solo se ofrecen horas de jornada.
+const ocupadas: string[] = []
 
 /* =========================================
    HORARIOS PARA MASCOTAS REGISTRADAS
@@ -1020,38 +1117,110 @@ function elegirMascotaRegistrada(idMascota: string) {
    libres sin superposiciones.
 ========================================= */
 
+/* =====================================================
+   FECHAS DE ATENCIÓN DISPONIBLES PARA SELECCIONAR
+
+   Generamos fechas de los próximos 60 días.
+
+   Solamente mostramos fechas cuando:
+   - El veterinario trabaja ese día.
+   - Existe al menos un horario futuro.
+   - La fecha corresponde a su jornada.
+
+   Para mascotas registradas conservamos
+   los profesionales asignables del formulario.
+===================================================== */
+
+
+/* =========================================
+   VETERINARIOS REALES DE MYSQL
+========================================= */
+
 const medicosCompatibles =
-  modoReserva === 'registrada'
-    ? veterinariosPorServicio(especie, datos.servicio)
+  modoReserva === 'registrada' && especie && datos.servicio
+    ? veterinariosApi.filter(
+        (veterinario) =>
+          veterinario.cargo === 'Médico veterinario' &&
+          veterinario.especies.some(
+            (especieAtendida) =>
+              especieAtendida.toLowerCase().replace(/s$/, '') ===
+              especie.toLowerCase()
+          )
+      )
     : []
+
+/* =========================================
+   PROFESIONALES SEGÚN TIPO DE RESERVA
+========================================= */
+
+const profesionalesParaFecha =
+  modoReserva === 'registrada'
+    ? medicosCompatibles
+    : medico
+      ? [medico]
+      : []
+
+/* =========================================
+   FECHAS SEGÚN DÍAS DE ATENCIÓN
+========================================= */
+
+const fechasParaElegir = Array.from(
+  { length: 60 },
+  (_, indice) => {
+    const fecha = new Date()
+    fecha.setHours(0, 0, 0, 0)
+    fecha.setDate(fecha.getDate() + indice)
+
+    const valor = [
+      fecha.getFullYear(),
+      String(fecha.getMonth() + 1).padStart(2, '0'),
+      String(fecha.getDate()).padStart(2, '0')
+    ].join('-')
+
+    const etiqueta = fecha.toLocaleDateString('es-CL', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    })
+
+    return { valor, etiqueta }
+  }
+).filter(({ valor }) =>
+  profesionalesParaFecha.some(
+    (veterinario) =>
+      atiendeDia(veterinario, valor) &&
+      HORARIOS_CITAS.some(
+        (hora) =>
+          atiendeHora(veterinario, hora) &&
+          esFutura(valor, hora)
+      )
+  )
+)
+
+
+/* =========================================
+   HORAS PARA MASCOTAS REGISTRADAS
+
+   Filtrar según:
+   - Día de atención del veterinario
+   - Horario de trabajo
+   - Hora futura
+   - Reservas registradas localmente
+========================================= */
 
 const horasDisponiblesRegistrada =
   modoReserva === 'registrada' && datos.fecha
-
     ? HORARIOS_CITAS.filter((hora) =>
-
         esFutura(datos.fecha, hora) &&
-
         medicosCompatibles.some((veterinario) =>
-
           atiendeDia(veterinario, datos.fecha) &&
-
-          atiendeHora(veterinario, hora) &&
-
-          !horasOcupadas(
-            datos.fecha,
-            undefined,
-            veterinario.id,
-            datos.servicio
-          ).includes(hora)
-
+          atiendeHora(veterinario, hora)
         )
       )
-
     : []
 
-
-  /* =====================================================
+/* =====================================================
      17. ACTUALIZAR DATOS Y REVALIDAR
   ===================================================== */
 
@@ -1063,18 +1232,8 @@ const horasDisponiblesRegistrada =
 
     setErrorGeneral('')
 
-    const nuevasOcupadas =
-      nuevos.fecha &&
-      nuevos.veterinarioId != null
-
-        ? horasOcupadas(
-            nuevos.fecha,
-            undefined,
-            nuevos.veterinarioId,
-            nuevos.servicio
-          )
-
-        : []
+    
+      const nuevasOcupadas: string[] = []
 
     setErrores((anterior) => {
 
@@ -1084,11 +1243,14 @@ const horasDisponiblesRegistrada =
 
       for (const campo of visitados) {
 
-        resultado[campo] = validar(
-          campo,
-          nuevos,
-          nuevasOcupadas
-        )
+        
+      resultado[campo] = validar(
+        campo,
+        nuevos,
+        nuevasOcupadas,
+        veterinariosApi
+      )
+
       }
 
       return resultado
@@ -1112,17 +1274,8 @@ const horasDisponiblesRegistrada =
       'hora'
     ]
 
-    const ocupadasAgenda =
-      nuevos.veterinarioId != null
-
-        ? horasOcupadas(
-            nuevos.fecha,
-            undefined,
-            nuevos.veterinarioId,
-            nuevos.servicio
-          )
-
-        : []
+     
+    const ocupadasAgenda: string[] = []
 
     setVisitados((anteriores) => [
 
@@ -1146,7 +1299,8 @@ const horasDisponiblesRegistrada =
         resultado[campo] = validar(
           campo,
           nuevos,
-          ocupadasAgenda
+          ocupadasAgenda,
+          veterinariosApi
         )
       }
 
@@ -1217,13 +1371,13 @@ const horasDisponiblesRegistrada =
 
       if (
         preferencia &&
-        citaCompatibleConCatalogo(
-          obtenerEspecieCita(
-            nuevos.tipoMascota,
-            nuevos.otraEspecie
-          ),
-          nuevos.servicio,
-          preferencia.veterinarioId
+        veterinariosApi.some((vet) =>
+          vet.id === preferencia.veterinarioId &&
+          vet.cargo === 'Médico veterinario' &&
+          vet.especies.some((e) =>
+            e.toLowerCase().replace(/s$/, '') ===
+            obtenerEspecieCita(nuevos.tipoMascota, nuevos.otraEspecie)?.toLowerCase()
+          )
         )
       ) {
 
@@ -1276,10 +1430,18 @@ if (
     nuevos.otraEspecie
   )
 
-  const compatibles = veterinariosPorServicio(
-    especieElegida,
-    nuevos.servicio
-  )
+  
+const compatibles = veterinariosApi.filter(
+  (vet) =>
+    vet.cargo === 'Médico veterinario' &&
+    Boolean(especieElegida) &&
+    vet.especies.some(
+      (especieAtendida) =>
+        especieAtendida.toLowerCase().replace(/s$/, '') ===
+        especieElegida?.toLowerCase()
+    )
+)
+
 
   const medicosDelDia = nuevos.fecha
     ? compatibles.filter(
@@ -1301,12 +1463,9 @@ let elegido: Veterinario | undefined =
 
       esFutura(nuevos.fecha, nuevos.hora) &&
 
-      !horasOcupadas(
-        nuevos.fecha,
-        undefined,
-        vet.id,
-        nuevos.servicio
-      ).includes(nuevos.hora)
+     
+     atiendeDia(vet, nuevos.fecha)
+
 
     )
   }
@@ -1324,31 +1483,19 @@ let elegido: Veterinario | undefined =
   ===================================================== */
 
   const medicoPreferido = preferencia
-
-    ? obtenerVeterinarioPorId(
-        preferencia.veterinarioId
-      )
-
+    ? veterinariosApi.find((v) => v.id === preferencia.veterinarioId) ?? null
     : null
 
-  const medicoSinServicios =
-    Boolean(
-      preferencia &&
-      especie &&
-      Object.keys(serviciosVisibles).length === 0
+  const medicoSinServicios = Boolean(
+    preferencia &&
+    especie &&
+    medicoPreferido &&
+    !medicoPreferido.especies.some((e) =>
+      e.toLowerCase().replace(/s$/, '') === especie.toLowerCase()
     )
+  )
 
-  const preferenciaNoCalza =
-    Boolean(
-      preferencia &&
-      datos.servicio &&
-      !citaCompatibleConCatalogo(
-        especie,
-        datos.servicio,
-        preferencia.veterinarioId
-      )
-    )
-
+  const preferenciaNoCalza = medicoSinServicios
 
   /* =====================================================
      21. SELECCIONAR VETERINARIO
@@ -1388,11 +1535,14 @@ let elegido: Veterinario | undefined =
 
       ...anteriores,
 
-      veterinarioId: validar(
-        'veterinarioId',
-        nuevos,
-        []
-      )
+      
+    veterinarioId: validar(
+      'veterinarioId',
+      nuevos,
+      [],
+      veterinariosApi
+    )
+
     }))
   }
 
@@ -1425,7 +1575,8 @@ let elegido: Veterinario | undefined =
       [campo]: validar(
         campo,
         datos,
-        ocupadas
+        ocupadas,
+        veterinariosApi
       )
     }))
   }
@@ -1455,13 +1606,13 @@ let elegido: Veterinario | undefined =
      Comprueba los datos, veterinario y horario.
   ===================================================== */
 
-  function enviar(
+  async function enviar(
     evento: FormEvent<HTMLFormElement>
   ) {
 
     evento.preventDefault()
 
-    if (enviada) {
+    if (enviada || enviando) {
       return
     }
 
@@ -1492,19 +1643,8 @@ if (modoReserva === 'registrada' && !datos.telefono.trim()) {
 
     /* Consultar disponibilidad actualizada. */
 
-    const actuales =
-      datos.fecha &&
-      datos.veterinarioId != null
-
-        ? horasOcupadas(
-            datos.fecha,
-            undefined,
-            datos.veterinarioId,
-            datos.servicio
-          )
-
-        : []
-
+    
+     const actuales: string[] = []
 
     /* Validar todos los campos. */
 
@@ -1526,21 +1666,23 @@ const camposValidar =
     : CAMPOS
 
 
-    const nuevosErrores: ErroresCita = {}
+    
+const nuevosErrores: ErroresCita = {}
 
-    for (const campo of camposValidar) {
+for (const campo of camposValidar) {
 
-      const mensaje = validar(
-        campo,
-        datos,
-        actuales
-      )
+  const mensaje = validar(
+    campo,
+    datos,
+    actuales,
+    veterinariosApi
+  )
 
-      if (mensaje) {
+  if (mensaje) {
+    nuevosErrores[campo] = mensaje
+  }
+}
 
-        nuevosErrores[campo] = mensaje
-      }
-    }
 
     setErrores(nuevosErrores)
     setVisitados(camposValidar)
@@ -1595,70 +1737,42 @@ const camposValidar =
 
     /* Guardar la solicitud de cita. */
 
-    const resultado = crearCita({
+    setEnviando(true)
 
-      correoUsuario:
-        usuario.correo,
+    try {
+      await solicitarCitaApi({
+        dueno: datos.nombreDueno.trim(),
+        propietario: datos.nombreDueno.trim(),
+        correo: datos.correo.trim(),
+        telefono: datos.telefono.trim(),
+        mascota: datos.nombreMascota.trim(),
+        tipoMascota: datos.tipoMascota,
+        otraEspecie: datos.otraEspecie || null,
+        edadMascota: edadEnAnios,
+        veterinarioId: medico.id,
+        servicio: datos.servicio,
+        fecha: datos.fecha,
+        hora: datos.hora,
+        motivo: datos.motivo.trim(),
+        duracionMinutos: servicioActual?.duracionMinutos,
+      })
+    } catch (error: unknown) {
+      setErrorGeneral(mensajeDeError(error))
+      if (error instanceof ApiError && error.campo && error.campo in datos) {
+        const campo = error.campo as Campo
+        setErrores((anterior) => ({
+          ...anterior,
+          [campo]: error.message,
+        }))
+      }
+      return
+    } finally {
+      setEnviando(false)
+    }
 
-      nombreUsuario:
-        `${usuario.nombre} ${usuario.apellidos}`.trim(),
-
-      dueno:
-        datos.nombreDueno.trim(),
-
-      propietario:
-        datos.nombreDueno.trim(),
-
-      correo:
-        datos.correo.trim(),
-
-      telefono:
-        datos.telefono.trim(),
-
-      mascota:
-        datos.nombreMascota.trim(),
-
-      tipoMascota:
-        datos.tipoMascota,
-
-      otraEspecie:
-        datos.otraEspecie,
-
-      edadMascota:
-        edadEnAnios,
-
-      veterinarioId:
-        datos.veterinarioId,
-
-      veterinarioNombre:
-        medico.nombre,
-
-      servicio:
-        datos.servicio,
-
-      fecha:
-        datos.fecha,
-
-      hora:
-        datos.hora,
-
-      motivo:
-        datos.motivo.trim()
-    })
-
-
-    
 /* ==============================================
    COMPROBAR SI LA CITA SE GUARDÓ
 ============================================== */
-
-if (!resultado.ok) {
-
-  setErrorGeneral(resultado.mensaje)
-
-  return
-}
-
 
 /* ==============================================
    REGISTRAR TAMBIÉN LA MASCOTA
@@ -2642,18 +2756,37 @@ setEnviada(true)
             ================================= */}
 
            
+
 {modoReserva === 'nueva' ? (
 
-  <SelectorVeterinarioCita
-    tipoMascota={datos.tipoMascota}
-    otraEspecie={datos.otraEspecie}
-    servicio={datos.servicio}
-    veterinarioId={datos.veterinarioId}
-    onSeleccionar={seleccionarVeterinario}
-    error={errores.veterinarioId}
-  />
+  <>
+    {cargandoVeterinarios && (
+      <p role="status" className="equipo-resumen">
+        Cargando veterinarios desde MySQL...
+      </p>
+    )}
+
+    {errorVeterinarios && (
+      <p role="alert" className="mensaje-error">
+        {errorVeterinarios}
+      </p>
+    )}
+
+    {!cargandoVeterinarios && !errorVeterinarios && (
+      <SelectorVeterinarioCita
+        tipoMascota={datos.tipoMascota}
+        otraEspecie={datos.otraEspecie}
+        servicio={datos.servicio}
+        veterinarioId={datos.veterinarioId}
+        onSeleccionar={seleccionarVeterinario}
+        error={errores.veterinarioId}
+        veterinariosDisponibles={veterinariosApi}
+      />
+    )}
+  </>
 
 ) : (
+
 
   <p className="cita-repetir-medico" role="status">
 
@@ -2686,127 +2819,114 @@ setEnviada(true)
                   Fecha *
                 </label>
 
-                <input
-                  id="fechaCita"
-                  name="fecha"
-                  type="date"
-                  min={fechaLocalHoy()}
-                  value={datos.fecha}
-                  onChange={manejarCambio}
-                  onBlur={() =>
-                    manejarSalida('fecha')
-                  }
-                  disabled={
-                    modoReserva === 'registrada'
-                    ? !datos.servicio
-                    : !medico
-                  }
-                />
+                
+{/* =========================================
+    SELECCIONAR SOLO DÍAS DE ATENCIÓN
+========================================= */}
 
-                {errorDe('fecha')}
+<select
+  id="fechaCita"
+  name="fecha"
+  value={datos.fecha}
+  onChange={manejarCambio}
+  onBlur={() => manejarSalida('fecha')}
+  disabled={
+    modoReserva === 'registrada'
+      ? !datos.servicio
+      : !medico
+  }
+  aria-invalid={!!errores.fecha}
+>
+  <option value="">
+    Selecciona un día de atención
+  </option>
 
-              </div>
+  {fechasParaElegir.map((fecha) => (
+    <option
+      key={fecha.valor}
+      value={fecha.valor}
+    >
+      {fecha.etiqueta}
+    </option>
+  ))}
+</select>
 
+{errorDe('fecha')}
 
-              {/* Hora */}
-
-              <div className="grupo-campo">
-
-                <label htmlFor="horaCita">
-                  Hora *
-                </label>
-
-                <select
-                  id="horaCita"
-                  name="hora"
-                  value={datos.hora}
-                  onChange={manejarCambio}
-                  onBlur={() =>
-                    manejarSalida('hora')
-                  }
-                  disabled={
-                     modoReserva === 'registrada'
-                      ? !datos.fecha ||
-                       !medicosCompatibles.some(
-                         (vet) => atiendeDia(vet, datos.fecha)
-                         )  : !medico ||
-     
-                         !atiendeDia(medico, datos.fecha)
-                        }
-
-                  aria-invalid={!!errores.hora}
-                >
-
-                  <option value="">
-                    Selecciona un horario
-                  </option>
+</div>
 
 
-                  {/* =================================
-                      HORAS SEGÚN DISPONIBILIDAD
-                  ================================= */}
+{/* =========================================
+    SELECCIONAR SOLO HORAS DE ATENCIÓN
+========================================= */}
 
-                  {HORARIOS_CITAS.map((hora) => {
+<div className="grupo-campo">
 
-                    const fuera =
-                      !atiendeHora(
-                        medico,
-                        hora
-                      )
+  <label htmlFor="horaCita">
+    Hora *
+  </label>
 
-                    const ocupada =
-                      ocupadas.includes(
-                        hora
-                      )
+  <select
+    id="horaCita"
+    name="hora"
+    value={datos.hora}
+    onChange={manejarCambio}
+    onBlur={() => manejarSalida('hora')}
+    disabled={
+      modoReserva === 'registrada'
+        ? !datos.fecha ||
+          !medicosCompatibles.some(
+            (vet) => atiendeDia(vet, datos.fecha)
+          )
+        : !medico ||
+          !atiendeDia(medico, datos.fecha)
+    }
+    aria-invalid={!!errores.hora}
+  >
 
-                    const pasada =
-                      !esFutura(
-                        datos.fecha,
-                        hora
-                      )
+    <option value="">
+      Selecciona un horario
+    </option>
 
-                    return (
+    {HORARIOS_CITAS
+      .filter((hora) => {
 
-                      <option
-                       key={hora}
-                      value={hora}
-                      disabled={
-                      modoReserva === 'registrada'
-                      ? !horasDisponiblesRegistrada.includes(hora)
-                       : fuera || ocupada || pasada
-                       }
-                       >
-                        
-                         {hora}
-                         {modoReserva === 'registrada'
-                         ? (
-                          horasDisponiblesRegistrada.includes(hora)
-                          ? ''
-                          : ' (no disponible)'
-                         )
-                         : (
-                           fuera
-                           ? ' (fuera de jornada)'
-                            : ocupada
-                            ? ' (no disponible)'
-                            : pasada
-                            ? ' (ya pasó)'
-                            : ''
-                              )}
-                              
-                              </option>
+        // Mascota registrada
+        if (modoReserva === 'registrada') {
+          return horasDisponiblesRegistrada.includes(hora)
+        }
+
+        // Mascota nueva con veterinario de MySQL
+        return Boolean(
+          medico &&
+          datos.fecha &&
+          atiendeDia(medico, datos.fecha) &&
+          atiendeHora(medico, hora) &&
+          esFutura(datos.fecha, hora) &&
+          !ocupadas.includes(hora)
+        )
+      })
+      .map((hora) => (
+
+        <option
+          key={hora}
+          value={hora}
+        >
+          {hora} hrs.
+        </option>
+
+      ))}
+ 
+  </select>
+
+  {errorDe('hora')}
+  <small>La hora se confirmará al registrar la solicitud.</small>
+
+</div>
+
+</div>
 
 
-                    )
-                  })}
-
-                </select>
-
-                {errorDe('hora')}
-
-              </div>
-
-            </div>
 
 
             {/* =================================
@@ -3116,14 +3236,14 @@ setEnviada(true)
               <button
                 type="submit"
                 className="boton-solicitar-cita"
-                disabled={enviada}
+                disabled={enviada || enviando}
               >
 
                 {enviada
-
-                  ? 'Solicitud enviada ✓'
-
-                  : 'Solicitar cita →'}
+  ? 'Solicitud enviada ✓'
+  : enviando
+    ? 'Guardando en MySQL...'
+    : 'Solicitar cita →'}
 
               </button>
 

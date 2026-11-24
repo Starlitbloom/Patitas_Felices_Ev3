@@ -1,4 +1,3 @@
-
 /* =========================================================
    PATITAS FELICES - MIS CITAS 
 
@@ -28,20 +27,21 @@ import '../styles/estilo-mis-citas.css'
 import { useAuth } from '../context/AuthContext'
 
 import {
-  actualizarCita,
   fechaLocalHoy,
-  HORARIOS_CITAS,
-  horasOcupadas,
-  listarCitasUsuario
+  HORARIOS_CITAS
 } from '../services/citasService'
 
+import {
+  consultarMisCitasApi,
+  actualizarCitaApi,
+  cancelarCitaApi
+} from '../services/citasApiService'
 import type {
-  Cita,
-  EstadoCita
-} from '../services/citasService'
-
-import '../styles/estilo-mis-citas.css'
-
+  CitaApi,
+  EstadoCitaApi,
+  NuevaCitaApi
+} from '../services/citasApiService'
+import { mensajeDeError } from '../services/api'
 
 /* =========================================================
    2. FORMATEAR FECHA
@@ -107,7 +107,7 @@ function imagenMascota(tipo: string): string {
    4. MOSTRAR ESPECIE
 ========================================================= */
 
-function mostrarEspecie(cita: Cita): string {
+function mostrarEspecie(cita: CitaApi): string {
 
   return cita.tipoMascota === 'Otro'
     ? cita.otraEspecie || 'Otra especie'
@@ -149,7 +149,7 @@ function mostrarEdad(edad: number): string {
    Cancelada -> Rosado.
 ========================================================= */
 function claseEstado(
-  estado: EstadoCita
+  estado: EstadoCitaApi
 ): string {
 
   switch (estado) {
@@ -173,7 +173,7 @@ function claseEstado(
    Mostramos primero las solicitudes
    registradas más recientemente.
 ========================================================= */
-function ordenarCitas(citas: Cita[]): Cita[] {
+function ordenarCitas(citas: CitaApi[]): CitaApi[] {
 
   return [...citas].sort((a, b) => {
 
@@ -209,7 +209,10 @@ export default function MisCitasPage() {
      CITAS DEL USUARIO
   ------------------------------------------------------- */
 
-  const [citas, setCitas] = useState<Cita[]>([])
+  const [citas, setCitas] = useState<CitaApi[]>([])
+  const [cargandoCitas, setCargandoCitas] = useState(true)
+  const [errorCitas, setErrorCitas] = useState('')
+  const [procesando, setProcesando] = useState(false)
 
   /* -------------------------------------------------------
      FILTRO POR ESTADO
@@ -258,31 +261,45 @@ export default function MisCitasPage() {
   /* =====================================================
      9. CARGAR CITAS DEL USUARIO
   ===================================================== */
-  useEffect(() => {
-
-    setCitas(
-      usuario
-        ? ordenarCitas(
-            listarCitasUsuario(usuario.correo)
-          )
-        : []
+  // Este filtro evita mostrar otras cuentas en pantalla. En producción, el
+  // backend también debe impedir consultar datos ajenos (no basta el filtro).
+  function soloCitasUsuario(lista: CitaApi[], correo: string): CitaApi[] {
+    const buscado = correo.trim().toLowerCase()
+    return lista.filter(
+      (cita) => cita.correoUsuario?.trim().toLowerCase() === buscado
     )
+  }
 
+  useEffect(() => {
+    let activo = true
+
+    if (!usuario) {
+      setCitas([])
+      setCargandoCitas(false)
+      return () => { activo = false }
+    }
+
+    setCargandoCitas(true)
+    setErrorCitas('')
+    void consultarMisCitasApi()
+      .then((lista) => {
+        if (activo) {
+          setCitas(ordenarCitas(soloCitasUsuario(lista, usuario.correo)))
+        }
+      })
+      .catch((error: unknown) => {
+        if (activo) setErrorCitas(mensajeDeError(error))
+      })
+      .finally(() => {
+        if (activo) setCargandoCitas(false)
+      })
+
+    return () => { activo = false }
   }, [usuario?.correo])
 
   /* =====================================================
-     10. RECARGAR CITAS
+     10. RECARGAR CITAS DE MYSQL
   ===================================================== */
-  function recargarCitas() {
-
-    setCitas(
-      usuario
-        ? ordenarCitas(
-            listarCitasUsuario(usuario.correo)
-          )
-        : []
-    )
-  }
   /* =====================================================
      11. FILTRAR CITAS POR ESTADO
      Ejemplos:
@@ -303,7 +320,7 @@ export default function MisCitasPage() {
      12. ABRIR MODIFICACIÓN
      Solo permitimos modificar solicitudes Pendientes.
   ===================================================== */
-  function abrirEdicion(cita: Cita) {
+  function abrirEdicion(cita: CitaApi) {
 
     if (cita.estado !== 'Pendiente') {
       return
@@ -346,20 +363,17 @@ export default function MisCitasPage() {
   /* =====================================================
      15. CONSULTAR HORAS NO DISPONIBLES
   ===================================================== */
-  const horasNoDisponibles =
-    citaEditando && nuevaFecha
-      ? horasOcupadas(
-          nuevaFecha,
-          citaEditando.id,
-          citaEditando.veterinarioId,
-          citaEditando.servicio
-        )
-      : []
+  // Mientras cita-service no tenga GET /disponibilidad, el selector solo
+  // bloquea horas pasadas. La validación definitiva debe hacerla el servidor.
+  const horasNoDisponibles = HORARIOS_CITAS.filter((hora) =>
+    nuevaFecha === fechaLocalHoy() &&
+    hora <= new Date().toTimeString().slice(0, 5)
+  )
 
   /* =====================================================
      16. GUARDAR MODIFICACIÓN
   ===================================================== */
-  function guardarCambios(
+  async function guardarCambios(
     evento: FormEvent<HTMLFormElement>
   ) {
 
@@ -432,7 +446,9 @@ export default function MisCitasPage() {
        Comprobar disponibilidad.
     ----------------------------------------- */
     if (
-      horasNoDisponibles.includes(nuevaHora)
+      
+    horasNoDisponibles.some((hora) => hora === nuevaHora)
+
     ) {
 
       setErrorEdicion(
@@ -442,31 +458,41 @@ export default function MisCitasPage() {
       return
     }
 
-    /* -----------------------------------------
-       Guardar con nuestro servicio.
-    ----------------------------------------- */
-    const resultado = actualizarCita(
-      citaEditando.id,
-      {
-        fecha: nuevaFecha,
-        hora: nuevaHora
-      }
-    )
+    const cambios: NuevaCitaApi = {
+      dueno: citaEditando.dueno,
+      propietario: citaEditando.propietario,
+      correo: citaEditando.correo,
+      telefono: citaEditando.telefono,
+      mascota: citaEditando.mascota,
+      tipoMascota: citaEditando.tipoMascota,
+      otraEspecie: citaEditando.otraEspecie,
+      edadMascota: citaEditando.edadMascota,
+      veterinarioId: citaEditando.veterinarioId,
+      servicio: citaEditando.servicio,
+      fecha: nuevaFecha,
+      hora: nuevaHora,
+      motivo: citaEditando.motivo,
+      duracionMinutos: citaEditando.duracionMinutos,
+    }
 
-
-    if (!resultado.ok) {
-
-      setErrorEdicion(resultado.mensaje)
-
+    setProcesando(true)
+    try {
+      const actualizada = await actualizarCitaApi(Number(citaEditando.id), cambios)
+      // Reflejar el cambio sin depender de una segunda petición a la API.
+      setCitas((anterior) => ordenarCitas(
+        anterior.map((cita) => cita.id === actualizada.id ? actualizada : cita)
+      ))
+    } catch (error: unknown) {
+      setErrorEdicion(mensajeDeError(error))
       return
+    } finally {
+      setProcesando(false)
     }
 
     /* -----------------------------------------
        Actualizar pantalla y mostrar mensaje.
     ----------------------------------------- */
     cerrarEdicion()
-
-    recargarCitas()
 
     setMensajeEsError(false)
 
@@ -478,7 +504,7 @@ export default function MisCitasPage() {
   /* =====================================================
      17. CONFIRMAR CANCELACIÓN
   ===================================================== */
-  function confirmarCancelacion(cita: Cita) {
+  async function confirmarCancelacion(cita: CitaApi) {
 
     if (
       !usuario ||
@@ -499,24 +525,18 @@ export default function MisCitasPage() {
       return
     }
 
-    /* -----------------------------------------
-       Actualizar estado de la cita.
-    ----------------------------------------- */
-    const resultado = actualizarCita(
-      cita.id,
-      {
-        estado: 'Cancelada'
-      }
-    )
-
-
-    if (!resultado.ok) {
-
+    setProcesando(true)
+    try {
+      const cancelada = await cancelarCitaApi(Number(cita.id))
+      setCitas((anterior) => ordenarCitas(
+        anterior.map((actual) => actual.id === cancelada.id ? cancelada : actual)
+      ))
+    } catch (error: unknown) {
       setMensajeEsError(true)
-
-      setMensaje(resultado.mensaje)
-
+      setMensaje(mensajeDeError(error))
       return
+    } finally {
+      setProcesando(false)
     }
 
     /* -----------------------------------------
@@ -525,8 +545,6 @@ export default function MisCitasPage() {
     setCancelandoId(null)
 
     cerrarEdicion()
-
-    recargarCitas()
 
     setMensajeEsError(false)
 
@@ -712,7 +730,15 @@ export default function MisCitasPage() {
           {/* =====================================
               CUANDO NO EXISTEN CITAS
           ===================================== */}
-          {citas.length === 0 ? (
+          {cargandoCitas ? (
+            <p role="status" className="mensaje-gestion-cita">
+              Consultando tus citas en MySQL...
+            </p>
+          ) : errorCitas ? (
+            <p role="alert" className="mensaje-gestion-cita mensaje-gestion-error">
+              {errorCitas}
+            </p>
+          ) : citas.length === 0 ? (
 
             <section
               className="sin-citas"
@@ -1091,6 +1117,7 @@ export default function MisCitasPage() {
                               <button
                                 type="submit"
                                 className="boton-guardar-cambios"
+                                disabled={procesando}
                               >
                                 Guardar cambios
                               </button>
@@ -1135,8 +1162,9 @@ export default function MisCitasPage() {
                               <button
                                 type="button"
                                 className="boton-cancelar-cita"
+                                disabled={procesando}
                                 onClick={() =>
-                                  confirmarCancelacion(cita)
+                                  void confirmarCancelacion(cita)
                                 }
                               >
                                 Sí, cancelar cita

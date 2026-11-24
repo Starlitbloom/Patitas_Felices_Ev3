@@ -24,6 +24,8 @@
    - Especialidad del veterinario.
 ========================================================= */
 
+import type { Veterinario } from '../../types/veterinario'
+
 import {
   obtenerEspecieCita,
   obtenerServicioCita,
@@ -56,11 +58,14 @@ interface Props {
 
   veterinarioId: number | null
 
+  veterinariosDisponibles?: Veterinario[]
+
   onSeleccionar: (id: number) => void
 
   error?: string
-}
+  }
 
+ 
 
 /* =========================================================
    3. COMPONENTE PRINCIPAL
@@ -79,9 +84,9 @@ export default function SelectorVeterinarioCita({
   servicio,
   veterinarioId,
   onSeleccionar,
-  error
-
-}: Props) {
+  error,
+  veterinariosDisponibles,
+}: Props) { 
 
 
   /* =====================================================
@@ -129,10 +134,36 @@ export default function SelectorVeterinarioCita({
         cuando el catálogo la identifica.
   ===================================================== */
 
-  const veterinarios = veterinariosPorServicio(
-    especie,
-    servicio
-  )
+ 
+/* =====================================================
+   PROFESIONALES DEL FORMULARIO
+
+   Si recibimos veterinarios desde MySQL,
+   utilizamos esos registros.
+
+   Mientras no se entregue esa lista, se mantiene
+   el comportamiento anterior del componente.
+===================================================== */
+
+const especiesEquipo = {
+  Perro: 'Perros',
+  Gato: 'Gatos',
+  Ave: 'Aves',
+  Conejo: 'Conejos',
+} as const
+
+const veterinarios =
+  veterinariosDisponibles === undefined
+    ? veterinariosPorServicio(especie, servicio)
+    : veterinariosDisponibles.filter(
+        (veterinario) =>
+          veterinario.cargo === 'Médico veterinario' &&
+          especie !== null &&
+          veterinario.especies.includes(
+            especiesEquipo[especie]
+          )
+      )
+
 
 
   /* =====================================================
@@ -408,16 +439,18 @@ export default function SelectorVeterinarioCita({
                   <img
 
                     src={veterinario.imagen}
-
-                    alt={
-                      `Fotografía de ${veterinario.nombre}`
-                    }
-
+                    alt={`Fotografía de ${veterinario.nombre}`}
                     loading="lazy"
+                    onError={(evento) => {
+                       const imagen = evento.currentTarget
 
-                  />
+                    if (!imagen.src.endsWith('/img/equipo.png')) {
+                      imagen.src = '/img/equipo.png'
+                    }
+                 }}
+               />
 
-                </div>
+             </div>
 
 
                 {/* =================================

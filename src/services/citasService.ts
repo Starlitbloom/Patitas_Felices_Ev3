@@ -13,6 +13,9 @@
    9. Considerar la duración de cada atención.
    10. Evitar reservas superpuestas.
 ========================================================= */
+
+import type { Veterinario } from '../types/veterinario'
+
 import {
   CLAVES,
   guardarColeccion,
@@ -315,13 +318,16 @@ function errorJornada(
   fecha: string,
   hora: string,
   veterinarioId: number,
-  servicio: string
+  servicio: string,
+  veterinarioReal?: Veterinario | null
+
 
 ): string | null {
+  
+const medico =
+  veterinarioReal ??
+  obtenerVeterinarioPorId(veterinarioId)
 
-  const medico = obtenerVeterinarioPorId(
-    veterinarioId
-  )
 
   if (
     !medico ||
@@ -426,7 +432,8 @@ function hayConflicto(
 
   veterinarioId?: number | null,
 
-  idExcluir?: string | number
+  idExcluir?: string | number,
+  veterinarioReal?: Veterinario | null
 
 ): boolean {
 
@@ -466,6 +473,19 @@ function hayConflicto(
 
       return false
     }
+
+/* Evitar confundir reservas antiguas
+   con veterinarios reales de MySQL. */
+
+if (
+  veterinarioReal &&
+  cita.veterinarioNombre &&
+  cita.veterinarioNombre.trim().toLocaleLowerCase('es-CL') !==
+    veterinarioReal.nombre.trim().toLocaleLowerCase('es-CL')
+) {
+  return false
+}
+
     /* -----------------------------------------
        Comparar veterinarios.
     ----------------------------------------- */
@@ -626,7 +646,9 @@ export function horasOcupadas(
 
   veterinarioId?: number | null,
 
-  servicio?: string
+  servicio?: string,
+  veterinarioReal?: Veterinario | null
+
 
 ): string[] {
 
@@ -638,16 +660,16 @@ export function horasOcupadas(
     /* -----------------------------------------
        Comprobar conflicto con otras citas.
     ----------------------------------------- */
-    const choca = hayConflicto(
+    
+  const choca = hayConflicto(
+    fecha,
+    hora,
+    duracion,
+    veterinarioId,
+    idExcluir,
+    veterinarioReal
+  )
 
-      fecha,
-      hora,
-      duracion,
-
-      veterinarioId,
-      idExcluir
-
-    )
     /* -----------------------------------------
        Comprobar jornada y duración.
     ----------------------------------------- */
@@ -663,7 +685,8 @@ export function horasOcupadas(
               fecha,
               hora,
               veterinarioId,
-              servicio!
+              servicio!,
+              veterinarioReal
 
             )
 
@@ -706,10 +729,10 @@ function validarDisponibilidad(
   fecha: string,
   hora: string,
   servicio: string,
-
   veterinarioId?: number | null,
+  idExcluir?: string | number,
+  veterinarioReal?: Veterinario | null
 
-  idExcluir?: string | number
 
 ): string | null {
   /* -----------------------------------------
@@ -780,14 +803,14 @@ function validarDisponibilidad(
   ----------------------------------------- */
   if (veterinarioId != null) {
 
-    const error = errorJornada(
+const error = errorJornada(
+  fecha,
+  hora,
+  veterinarioId,
+  servicio,
+  veterinarioReal
+)
 
-      fecha,
-      hora,
-      veterinarioId,
-      servicio
-
-    )
 
     if (error) {
 
@@ -804,16 +827,16 @@ function validarDisponibilidad(
 
   if (
 
-    hayConflicto(
+    
+hayConflicto(
+  fecha,
+  hora,
+  duracion,
+  veterinarioId,
+  idExcluir,
+  veterinarioReal
+)
 
-      fecha,
-      hora,
-      duracion,
-
-      veterinarioId,
-      idExcluir
-
-    )
 
   ) {
 
@@ -837,6 +860,8 @@ function validarCompatibilidad(
     | 'veterinarioId'
 
   >
+,
+veterinarioReal?: Veterinario | null
 
 ): string | null {
   /* -----------------------------------------
@@ -871,6 +896,30 @@ function validarCompatibilidad(
 
     return 'El servicio seleccionado no corresponde a la especie.'
   }
+
+/* Validación con veterinario real de MySQL */
+
+if (veterinarioReal) {
+  const especieEnEquipo = {
+    Perro: 'Perros',
+    Gato: 'Gatos',
+    Ave: 'Aves',
+    Conejo: 'Conejos'
+  } as const
+
+  if (
+    veterinarioReal.id !== cita.veterinarioId ||
+    veterinarioReal.cargo !== 'Médico veterinario' ||
+    !veterinarioReal.especies.includes(
+      especieEnEquipo[especie]
+    )
+  ) {
+    return 'El veterinario no atiende esta especie.'
+  }
+
+  return null
+}
+
   /* -----------------------------------------
      Comprobar veterinario.
   ----------------------------------------- */
@@ -898,7 +947,9 @@ function validarCompatibilidad(
 ========================================================= */
 export function crearCita(
 
-  datos: NuevaCita
+datos: NuevaCita,
+veterinarioReal?: Veterinario | null
+
 
 ): ResultadoOperacion<Cita> {
   /* -----------------------------------------
@@ -956,9 +1007,9 @@ export function crearCita(
   /* -----------------------------------------
      Validar especie, servicio y médico.
   ----------------------------------------- */
-
   const errorCatalogo = validarCompatibilidad(
-    datos
+   datos,
+   veterinarioReal
   )
 
   if (errorCatalogo) {
@@ -977,15 +1028,17 @@ export function crearCita(
   /* -----------------------------------------
      Comprobar disponibilidad nuevamente.
   ----------------------------------------- */
-  const errorAgenda = validarDisponibilidad(
-
-    datos.fecha,
-    datos.hora,
-    datos.servicio,
-
-    datos.veterinarioId
-
+  
+  
+ const errorAgenda = validarDisponibilidad(
+   datos.fecha,
+   datos.hora,
+   datos.servicio,
+   datos.veterinarioId,
+   undefined,
+   veterinarioReal
   )
+
 
   if (errorAgenda) {
 
@@ -1003,9 +1056,11 @@ export function crearCita(
   /* -----------------------------------------
      Obtener el nombre desde los datos originales.
   ----------------------------------------- */
-  const medico = obtenerVeterinarioPorId(
-    datos.veterinarioId
-  )!
+ 
+const medico =
+  veterinarioReal ??
+  obtenerVeterinarioPorId(datos.veterinarioId)!
+
   /* -----------------------------------------
      Construir la nueva cita.
   ----------------------------------------- */

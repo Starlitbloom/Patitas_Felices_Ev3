@@ -17,7 +17,12 @@
 export const SERVICIOS = {
   auth: import.meta.env.VITE_AUTH_URL ?? 'http://localhost:8081/api/v1',
   mascota: import.meta.env.VITE_MASCOTA_URL ?? 'http://localhost:8082/api/v1',
-  cita: import.meta.env.VITE_CITA_URL ?? 'http://localhost:8086/api/v1',
+    // Microservicio de gestión de citas veterinarias.
+  cita: import.meta.env.VITE_CITA_URL ?? 'http://localhost:8086/api',
+   // Microservicio de profesionales veterinarios.
+  veterinario: import.meta.env.VITE_VETERINARIO_URL ?? 'http://localhost:8085/api',
+   // Microservicio de novedades de la clínica.
+  novedad: import.meta.env.VITE_NOVEDAD_URL ?? 'http://localhost:8087/api',
   contacto: import.meta.env.VITE_CONTACTO_URL ?? 'http://localhost:8088/api/v1',
   notificacion: import.meta.env.VITE_NOTIFICACION_URL ?? 'http://localhost:8089/api/v1',
   reporte: import.meta.env.VITE_REPORTE_URL ?? 'http://localhost:8090/api/v1',
@@ -30,6 +35,8 @@ const NOMBRE_SERVICIO: Record<Servicio, string> = {
   auth: 'auth-service (puerto 8081)',
   mascota: 'mascota-service (puerto 8082)',
   cita: 'cita-service (puerto 8086)',
+  veterinario: 'veterinario-service (puerto 8085)',
+  novedad: 'novedad-service (puerto 8087)',
   contacto: 'contacto-service (puerto 8088)',
   notificacion: 'notificacion-service (puerto 8089)',
   reporte: 'report-service (puerto 8090)',
@@ -111,7 +118,7 @@ export function renovarToken(): Promise<boolean> {
 /* ---------------- Petición genérica ---------------- */
 
 export interface OpcionesPeticion {
-  metodo?: 'GET' | 'POST' | 'PUT' | 'DELETE'
+  metodo?: 'GET' | 'POST' | 'PUT' | 'PATCH'| 'DELETE'
   cuerpo?: unknown
   /** true = no enviar el token (login, registro). */
   sinToken?: boolean
