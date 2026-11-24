@@ -8,6 +8,7 @@ export interface ItemLista {
   id: string
   titulo: string
   detalle?: string
+  imagen?: string
   /** Contenido bajo la tarjeta del ítem, en el fondo blanco (ej: acciones de la mascota). */
   extra?: ReactNode
 }
@@ -40,9 +41,18 @@ export function ListaPerfil({ titulo, icono, iconoItem, items, textoVacio, enlac
           {items.map((item) => (
             /* Fragment agrupa los dos <li> de cada ítem sin agregar una etiqueta extra */
             <Fragment key={item.id}>
-              {/* Tarjeta gris del ítem: ícono, título y detalle */}
+              {/* Tarjeta gris del ítem: ícono, título y detalle,donde se pone imagen de una mascota que agregaste a tu perfil*/}
+              
               <li className="perfil-mascota-item">
-                <span>{iconoItem}</span>
+                {item.imagen ? (
+                  <img
+                    src={item.imagen}
+                    alt={`Foto de ${item.titulo}`}
+                    style={{ width: 48, height: 48, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
+                  />
+                ) : (
+                  <span>{iconoItem}</span>
+                )}
                 <div style={{ flex: 1 }}>
                   <strong>{item.titulo}</strong>
                   {item.detalle && (

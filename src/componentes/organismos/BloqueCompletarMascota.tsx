@@ -1,17 +1,17 @@
 /* ORGANISMO — Bloque "Editar" de una mascota.
    Se usa en el perfil del cliente y en el detalle de la mascota.
-   Todo cambio requiere aprobación del personal desde el panel admin. */
-import { useRef, useState, type FormEvent, type MouseEvent } from 'react'
-import type { CambiosSolicitud, Mascota, Sexo } from '../../types/mascota'
-import { enviarCambiosMascota, listarSolicitudes, obtenerSolicitudPendiente } from '../../services/mascotasService'
+   EP3 — los cambios se envían a mascota-service (POST /mascotas/{id}/solicitudes):
+   - si la ficha está INCOMPLETA, el backend aplica los datos al tiro;
+   - si ya está COMPLETA, queda pendiente hasta que el personal la apruebe o rechace. */
+import { useEffect, useRef, useState, type FormEvent, type MouseEvent } from 'react'
+import type { CambiosSolicitud, Mascota, Sexo, SolicitudCambio } from '../../types/mascota'
+import { enviarCambiosMascota, listarSolicitudesDeMascota } from '../../services/mascotasService'
 import { redimensionarImagen, validarArchivoAvatar } from '../../utils/imagen'
 import { Boton } from '../atomos/Boton'
 import { MensajeError } from '../atomos/MensajeError'
 
 export interface BloqueCompletarMascotaProps {
   mascota: Mascota
-  /** Correo de quien envía los cambios (el dueño/a con sesión iniciada). */
-  correoSolicitante: string
   /** Se avisa al guardar para que la página vuelva a leer los datos. */
   onGuardado: () => void
 }
@@ -25,7 +25,28 @@ const datosDe = (m: Mascota): CambiosSolicitud => ({
   descripcion: m.descripcion ?? '',
 })
 
-export function BloqueCompletarMascota({ mascota, correoSolicitante, onGuardado }: BloqueCompletarMascotaProps) {
+/* ¿El backend aplicó los datos al tiro? (ficha incompleta: se aprueba en el mismo segundo en que se envía) */
+const aplicadaAlTiro = (s: SolicitudCambio) =>
+  s.estado === 'aprobada' && !!s.fechaResolucion && s.fechaResolucion.slice(0, 19) === s.fechaSolicitud.slice(0, 19)
+
+/* Ids de las respuestas que el dueño ya vio (guardados en el navegador) */
+const CLAVE_AVISOS = 'avisosMascotaVistos'
+function avisosVistos(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(CLAVE_AVISOS) ?? '[]') as string[]
+  } catch {
+    return []
+  }
+}
+function marcarAvisoVisto(id: string) {
+  try {
+    localStorage.setItem(CLAVE_AVISOS, JSON.stringify([...avisosVistos(), id]))
+  } catch {
+    /* si el navegador no deja guardar, el aviso solo se esconde por ahora */
+  }
+}
+
+export function BloqueCompletarMascota({ mascota, onGuardado }: BloqueCompletarMascotaProps) {
   const { id } = mascota
 
   /* Si el formulario está desplegado o escondido */
@@ -41,20 +62,42 @@ export function BloqueCompletarMascota({ mascota, correoSolicitante, onGuardado 
   /* Referencia al input de archivo oculto, para abrirlo desde el botón "Subir foto" */
   const inputArchivo = useRef<HTMLInputElement>(null)
 
-  /* Si ya envió cambios y aún no se resuelven, no puede enviar otros */
-  const pendiente = obtenerSolicitudPendiente(id)
+  /* Solicitudes de esta mascota (vienen de mascota-service, la más reciente primero) */
+  const [solicitudes, setSolicitudes] = useState<SolicitudCambio[]>([])
 
-  /* Última respuesta de administración para esta mascota y este dueño.
-     Se consulta de nuevo al volver a Mi perfil tras iniciar sesión. */
-  const ultimaRespuesta = listarSolicitudes()
-    .filter((solicitud) =>
-      solicitud.mascotaId === id &&
-      solicitud.correoSolicitante.trim().toLowerCase() === correoSolicitante.trim().toLowerCase() &&
-      solicitud.estado !== 'pendiente'
-    )
-    .sort((a, b) =>
-      (b.fechaResolucion ?? '').localeCompare(a.fechaResolucion ?? '')
-    )[0]
+  /* Mientras se envía, el botón Guardar queda deshabilitado */
+  const [enviando, setEnviando] = useState(false)
+
+  /* Al mostrar el bloque se piden las solicitudes de la mascota (el dueño solo ve las de sus mascotas) */
+  useEffect(() => {
+    let activo = true
+    listarSolicitudesDeMascota(id)
+      .then((lista) => activo && setSolicitudes(lista))
+      .catch(() => activo && setSolicitudes([])) // si falla, simplemente no se muestran avisos
+    return () => {
+      activo = false
+    }
+  }, [id])
+
+  /* Si ya envió cambios y aún no se resuelven, no puede enviar otros */
+  const pendiente = solicitudes.find((s) => s.estado === 'pendiente') ?? null
+
+  /* Última solicitud ya resuelta (aprobada o rechazada), para avisar al dueño qué pasó */
+  const ultimaRespuesta = solicitudes.find((s) => s.estado !== 'pendiente')
+
+  
+  /* El aviso se muestra 6 segundos y luego desaparece (y no vuelve a salir al recargar) */
+  const idRespuesta = ultimaRespuesta?.id ?? null
+  const [avisoVisto, setAvisoVisto] = useState<string | null>(null)
+  const yaVisto = idRespuesta !== null && (idRespuesta === avisoVisto || avisosVistos().includes(idRespuesta))
+  useEffect(() => {
+    if (idRespuesta === null || avisosVistos().includes(idRespuesta)) return
+    const temporizador = setTimeout(() => {
+      marcarAvisoVisto(idRespuesta)
+      setAvisoVisto(idRespuesta)
+    }, 6000)
+    return () => clearTimeout(temporizador)
+  }, [idRespuesta])
 
   /* Abre o cierra el formulario; al abrir parte con los datos actuales */
   const alternar = (e: MouseEvent<HTMLAnchorElement>) => {
@@ -87,15 +130,17 @@ export function BloqueCompletarMascota({ mascota, correoSolicitante, onGuardado 
     }
   }
 
-  /* Al guardar: se genera una solicitud que debe revisar administración. */
-  const enviar = (e: FormEvent) => {
+  /* Al guardar: se envía la solicitud a mascota-service */
+  const enviar = async (e: FormEvent) => {
     e.preventDefault()
-    const resultado = enviarCambiosMascota(id, correoSolicitante, {
+    setEnviando(true)
+    const resultado = await enviarCambiosMascota(id, {
       ...datos,
       raza: datos.raza.trim(),
       peso: datos.peso.trim(),
       descripcion: datos.descripcion.trim(),
     })
+    setEnviando(false)
 
     /* Si el servicio rechaza los datos, se muestra el error junto al campo que corresponde */
     if (!resultado.ok) {
@@ -104,7 +149,8 @@ export function BloqueCompletarMascota({ mascota, correoSolicitante, onGuardado 
       return
     }
 
-    /* Todo bien: se cierra el formulario y se avisa a la página para que recargue la lista */
+    /* Todo bien: se guarda la solicitud nueva, se cierra el formulario y se avisa a la página */
+    setSolicitudes((prev) => [resultado.dato, ...prev])
     setAbierto(false)
     onGuardado()
   }
@@ -112,12 +158,14 @@ export function BloqueCompletarMascota({ mascota, correoSolicitante, onGuardado 
   return (
     <>
       {/* Aviso de guardado y respuesta del administrador, solo al dueño. */}
-      {!pendiente && ultimaRespuesta && (
+        {!pendiente && ultimaRespuesta && !yaVisto && (
         <p
           className={`alerta-mascota ${ultimaRespuesta.estado === 'aprobada' ? 'alerta-mascota--info' : ''}`}
           role="status"
         >
-          {ultimaRespuesta.estado === 'aprobada'
+          {aplicadaAlTiro(ultimaRespuesta)
+            ? `✅ Datos de ${mascota.nombre} guardados. La ficha ya está actualizada.`
+            : ultimaRespuesta.estado === 'aprobada'
             ? `✅ Administración aprobó los cambios de ${mascota.nombre}. La ficha ya está actualizada.`
             : `❌ Administración rechazó los cambios de ${mascota.nombre}. Puedes volver a editarlos.`}
         </p>
@@ -228,8 +276,8 @@ export function BloqueCompletarMascota({ mascota, correoSolicitante, onGuardado 
           </div>
 
           {/* Guardar los cambios */}
-          <Boton type="submit">
-            Guardar
+          <Boton type="submit" disabled={enviando}>
+            {enviando ? 'Guardando…' : 'Guardar'}
           </Boton>
         </form>
       )}

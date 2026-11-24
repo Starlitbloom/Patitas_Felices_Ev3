@@ -1,10 +1,13 @@
 /* ORGANISMO — Contenido de la ventana "Historial" de un paciente (panel admin).
    Muestra la foto y los datos de la mascota, todas sus atenciones (con los servicios
    realizados) y su calendario de vacunas. Reutiliza las mismas tarjetas de la ficha
-   pública para que el personal vea exactamente lo que ve el dueño. */
-import type { EstadoMascota, Mascota } from '../../types/mascota'
+   pública para que el personal vea exactamente lo que ve el dueño.
+   EP3: las atenciones y vacunas se piden a historial-service (8083) al abrir la ventana. */
+import { useEffect, useState } from 'react'
+import type { EstadoMascota, Mascota, RegistroClinico, RegistroVacuna } from '../../types/mascota'
 import { TEXTO_ESTADO_MASCOTA } from '../../types/mascota'
 import { obtenerHistorial, obtenerVacunas } from '../../services/mascotasService'
+import { mensajeDeError } from '../../services/api'
 import { TarjetaRegistroClinico } from '../moleculas/TarjetaRegistroClinico'
 import { TarjetaVacuna } from '../moleculas/TarjetaVacuna'
 
@@ -22,9 +25,24 @@ const CLASE_BADGE: Record<EstadoMascota, string> = {
 export function DetalleHistorialPaciente({ mascota }: DetalleHistorialPacienteProps) {
   const { nombre, especie, raza, dueño, imagen, estado } = mascota
 
-  /* Atenciones y vacunas guardadas de esta mascota (lo más reciente va primero) */
-  const historial = obtenerHistorial(mascota.id)
-  const vacunas = obtenerVacunas(mascota.id)
+  /* Atenciones y vacunas de esta mascota (lo más reciente va primero) */
+  const [historial, setHistorial] = useState<RegistroClinico[]>([])
+  const [vacunas, setVacunas] = useState<RegistroVacuna[]>([])
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let activo = true
+    Promise.all([obtenerHistorial(mascota.id), obtenerVacunas(mascota.id)])
+      .then(([atenciones, vacunasMascota]) => {
+        if (!activo) return
+        setHistorial(atenciones)
+        setVacunas(vacunasMascota)
+      })
+      .catch((e) => activo && setError(mensajeDeError(e)))
+    return () => {
+      activo = false
+    }
+  }, [mascota.id])
 
   return (
     <div className="historial-paciente">
@@ -42,13 +60,15 @@ export function DetalleHistorialPaciente({ mascota }: DetalleHistorialPacientePr
         </div>
       </div>
 
+      {error && <p className="historial-paciente-vacio">⚠️ {error}</p>}
+
       {/* Atenciones: todas las del historial, cada una con sus servicios */}
       <h4 className="admin-modal-seccion">Atenciones ({historial.length})</h4>
       <div className="lista-registros">
         {historial.length === 0 ? (
           <p className="historial-paciente-vacio">Aún no hay atenciones registradas para este paciente.</p>
         ) : (
-          historial.map((registro, indice) => <TarjetaRegistroClinico key={indice} {...registro} />)
+          historial.map((registro, indice) => <TarjetaRegistroClinico key={registro.id ?? indice} {...registro} />)
         )}
       </div>
 
@@ -58,7 +78,7 @@ export function DetalleHistorialPaciente({ mascota }: DetalleHistorialPacientePr
         {vacunas.length === 0 ? (
           <p className="historial-paciente-vacio">Este paciente no tiene vacunas registradas.</p>
         ) : (
-          vacunas.map((registro, indice) => <TarjetaVacuna key={indice} {...registro} />)
+          vacunas.map((registro, indice) => <TarjetaVacuna key={registro.id ?? indice} {...registro} />)
         )}
       </div>
     </div>

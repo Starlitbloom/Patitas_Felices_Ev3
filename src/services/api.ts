@@ -17,6 +17,8 @@
 export const SERVICIOS = {
   auth: import.meta.env.VITE_AUTH_URL ?? 'http://localhost:8081/api/v1',
   mascota: import.meta.env.VITE_MASCOTA_URL ?? 'http://localhost:8082/api/v1',
+  historial: import.meta.env.VITE_HISTORIAL_URL ?? 'http://localhost:8083/api/v1',
+  servicioClinico: import.meta.env.VITE_SERVICIO_CLINICO_URL ?? 'http://localhost:8084/api/v1',
     // Microservicio de gestión de citas veterinarias.
   cita: import.meta.env.VITE_CITA_URL ?? 'http://localhost:8086/api',
    // Microservicio de profesionales veterinarios.
@@ -34,6 +36,8 @@ export type Servicio = keyof typeof SERVICIOS
 const NOMBRE_SERVICIO: Record<Servicio, string> = {
   auth: 'auth-service (puerto 8081)',
   mascota: 'mascota-service (puerto 8082)',
+  historial: 'historial-service (puerto 8083)',
+  servicioClinico: 'servicio-clinico-service (puerto 8084)',
   cita: 'cita-service (puerto 8086)',
   veterinario: 'veterinario-service (puerto 8085)',
   novedad: 'novedad-service (puerto 8087)',

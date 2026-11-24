@@ -2,6 +2,7 @@
    Prueba P07 — Detalle de una mascota
    Archivo probado: src/paginas/DetalleMascotaPage.tsx
    (muestra la ficha de la mascota y un mensaje si no existe)
+   EP3: la ficha viene de mascota-service (simulado): Rocky tiene el id 1.
    Se inicia sesión como Maria Calfileo, dueña de Rocky.
 ========================================================= */
 
@@ -11,19 +12,18 @@ import { beforeEach, expect, test } from 'vitest'
 import { screen } from '@testing-library/react'
 // Route y Routes: definen la dirección de la página (/mascotas/:id)
 import { Route, Routes } from 'react-router-dom'
-// Ayudante de tu compañera: dibuja la página con enrutador y sesión, como en la app real
+// dibuja la página con enrutador y sesión, como en la app real
 import { renderConApp } from './utils'
-// Carga las 6 mascotas iniciales en localStorage
-import { asegurarDatosInicialesMascotas } from '../services/mascotasService'
-// Deja una sesión iniciada (simula que alguien hizo login).
-// EP3: los usuarios viven en auth-service, por eso se usa el ayudante de pruebas.
-import { iniciarSesionDePrueba } from './backendSimulado'
+// simularBackend: responde como los microservicios; ID_MASCOTA: id del backend de cada mascota de ejemplo
+// iniciarSesionDePrueba: deja una sesión iniciada (simula que alguien hizo login)
+import { ID_MASCOTA, iniciarSesionDePrueba, simularBackend } from './backendSimulado'
 // La página que se va a probar
 import DetalleMascotaPage from '../paginas/DetalleMascotaPage'
 
 // Esto se ejecuta antes de cada prueba, para partir siempre con los mismos datos
 beforeEach(() => {
-  asegurarDatosInicialesMascotas() // las 6 mascotas iniciales
+  localStorage.clear()
+  simularBackend() // mascota-service e historial-service simulados
   iniciarSesionDePrueba('admin-maria') // inicia sesión como Maria, la dueña
 })
 
@@ -35,17 +35,17 @@ const mostrarDetalle = (id: string) =>
     <Routes>
       <Route path="/mascotas/:id" element={<DetalleMascotaPage />} />
     </Routes>,
-    // Dirección inicial, por ejemplo /mascotas/rocky
+    // Dirección inicial, por ejemplo /mascotas/1
     `/mascotas/${id}`,
   )
 
 // Definición de la prueba: el texto es el nombre que aparecerá en el informe
-test('P07 - READ: el detalle muestra la ficha de la mascota y avisa si no existe', () => {
+test('P07 - READ: el detalle muestra la ficha de la mascota y avisa si no existe', async () => {
   // Una mascota que existe: se ve su nombre
   // Dibuja el detalle de Rocky; unmount sirve para quitarlo de la pantalla después
-  const { unmount } = mostrarDetalle('rocky')
-  // El título principal de la página debe ser "Rocky"
-  expect(screen.getByRole('heading', { level: 1, name: 'Rocky' })).toBeInTheDocument()
+  const { unmount } = mostrarDetalle(String(ID_MASCOTA.rocky))
+  // El título principal de la página debe ser "Rocky" (findBy espera la respuesta del backend)
+  expect(await screen.findByRole('heading', { level: 1, name: 'Rocky' })).toBeInTheDocument()
   // El mensaje de error no debe aparecer (queryByText devuelve null si no lo encuentra)
   expect(screen.queryByText('Mascota no encontrada')).toBe(null)
   // Quita la página de Rocky para dibujar la siguiente sin mezclarlas
@@ -55,5 +55,5 @@ test('P07 - READ: el detalle muestra la ficha de la mascota y avisa si no existe
   // Dibuja el detalle de un id que no existe
   mostrarDetalle('no-existe')
   // Ahora sí debe aparecer el mensaje de error
-  expect(screen.getByText('Mascota no encontrada')).toBeInTheDocument()
+  expect(await screen.findByText('Mascota no encontrada')).toBeInTheDocument()
 })

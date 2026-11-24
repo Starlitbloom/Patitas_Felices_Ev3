@@ -2,6 +2,7 @@
    Prueba P06 — Catálogo "Mis mascotas"
    Archivo probado: src/paginas/MisMascotasPage.tsx
    (filtro por especie + buscador por nombre + mensaje de resultados)
+   EP3: las mascotas vienen de mascota-service, simulado con backendSimulado.ts
    Se inicia sesión como Maria Calfileo, dueña de 3 mascotas:
    Rocky (perro), Luna y Michi (gatos).
 ========================================================= */
@@ -12,29 +13,29 @@ import { beforeEach, expect, test } from 'vitest'
 import { fireEvent, screen } from '@testing-library/react'
 // Ayudante de tu compañera: dibuja la página con enrutador y sesión, como en la app real
 import { renderConApp } from './utils'
-// Carga las 6 mascotas iniciales en localStorage
-import { asegurarDatosInicialesMascotas } from '../services/mascotasService'
-// Deja una sesión iniciada (simula que alguien hizo login).
-// EP3: los usuarios viven en auth-service, por eso se usa el ayudante de pruebas.
-import { iniciarSesionDePrueba } from './backendSimulado'
+// simularBackend: reemplaza fetch y responde como los microservicios (con las 6 mascotas iniciales)
+// iniciarSesionDePrueba: deja una sesión iniciada (simula que alguien hizo login)
+import { iniciarSesionDePrueba, simularBackend } from './backendSimulado'
 // La página que se va a probar
 import MisMascotasPage from '../paginas/MisMascotasPage'
 
 // Esto se ejecuta antes de cada prueba, para partir siempre con los mismos datos
 beforeEach(() => {
-  asegurarDatosInicialesMascotas() // las 6 mascotas iniciales
+  localStorage.clear()
+  simularBackend() // mascota-service simulado con las 6 mascotas iniciales
   iniciarSesionDePrueba('admin-maria') // inicia sesión como Maria, la dueña
 })
 
 // Definición de la prueba: el texto es el nombre que aparecerá en el informe
-test('P06 - FILTRO: en Mis mascotas elegir una especie o buscar por nombre reduce la lista', () => {
+test('P06 - FILTRO: en Mis mascotas elegir una especie o buscar por nombre reduce la lista', async () => {
   // Datos de prueba
   const textoSinResultados = 'Zzz' // un nombre que no existe, para probar la lista vacía
 
   // Dibuja la página en una pantalla simulada
   renderConApp(<MisMascotasPage />)
-  // Sin filtros, la página debe decir que hay 3 mascotas (las de Maria)
-  expect(screen.getByText('3 mascotas encontradas')).toBeInTheDocument()
+  // Sin filtros, la página debe decir que hay 3 mascotas (las de Maria).
+  // findByText ESPERA a que llegue la respuesta del backend (la carga es asíncrona)
+  expect(await screen.findByText('3 mascotas encontradas')).toBeInTheDocument()
 
   // Por especie: solo quedan los gatos
   // Simula un clic en el botón "Gatos"

@@ -1,8 +1,11 @@
 /* PÁGINA — Detalle de mascota (ruta /mascotas/:id).
    Muestra la ficha con foto y datos, y tres accesos (ficha clínica,
-   historial y vacunas) que despliegan su contenido debajo. */
+   historial y vacunas) que despliegan su contenido debajo.
+   EP3: la ficha viene de mascota-service (8082) y el historial y las vacunas
+   de historial-service (8083). Un cliente que pide una mascota ajena recibe 403
+   del backend y aquí se muestra como "Mascota no encontrada". */
 import { Link, useParams } from 'react-router-dom'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import {
   esFavorita,
@@ -11,7 +14,8 @@ import {
   obtenerMascotaPorId,
   obtenerVacunas,
 } from '../services/mascotasService'
-import { TEXTO_ESTADO_MASCOTA } from '../types/mascota'
+import { mensajeDeError } from '../services/api'
+import { TEXTO_ESTADO_MASCOTA, type Mascota, type RegistroClinico, type RegistroVacuna } from '../types/mascota'
 import { listarCitasUsuario } from '../services/citasService'
 import { obtenerEspecieCita } from '../services/catalogoCitasService'
 
@@ -54,8 +58,12 @@ export default function DetalleMascotaPage() {
   const { id } = useParams<{ id: string }>()
   const { usuario } = useAuth()
 
-  /* Se lee la mascota en cada render, así se ve actualizada después de guardar cambios */
-  const mascota = id ? obtenerMascotaPorId(id) : null
+  /* Datos que vienen del backend */
+  const [mascota, setMascota] = useState<Mascota | null>(null)
+  const [historial, setHistorial] = useState<RegistroClinico[]>([])
+  const [vacunas, setVacunas] = useState<RegistroVacuna[]>([])
+  const [cargando, setCargando] = useState(true)
+  const [errorCarga, setErrorCarga] = useState<string | null>(null)
 
   /* Tarjeta de acceso abierta (null = ninguna) */
   const [seccion, setSeccion] = useState<Seccion | null>(null)
@@ -64,7 +72,47 @@ export default function DetalleMascotaPage() {
   const [favorita, setFavorita] = useState(() => (id ? esFavorita(id) : false))
 
   /* Se incrementa al guardar cambios para volver a leer la mascota */
-  const [, setVersion] = useState(0)
+  const [version, setVersion] = useState(0)
+
+  /* Pide la ficha a mascota-service y, si existe, su historial y vacunas a historial-service */
+  useEffect(() => {
+    let activo = true
+    ;(async () => {
+      try {
+        const encontrada = id ? await obtenerMascotaPorId(id) : null
+        if (!activo) return
+        setMascota(encontrada)
+        if (encontrada) {
+          const [atenciones, vacunasMascota] = await Promise.all([obtenerHistorial(encontrada.id), obtenerVacunas(encontrada.id)])
+          if (!activo) return
+          setHistorial(atenciones)
+          setVacunas(vacunasMascota)
+        }
+        setErrorCarga(null)
+      } catch (error) {
+        if (activo) setErrorCarga(mensajeDeError(error))
+      } finally {
+        if (activo) setCargando(false)
+      }
+    })()
+    return () => {
+      activo = false
+    }
+  }, [id, version])
+
+  /* Mientras llega la respuesta del backend */
+  if (cargando) {
+    return (
+      <main className="seccion-detalle-mascota">
+        <HeroDetalleMascota />
+        <section className="detalle-fondo-ficha">
+          <div className="contenedor detalle-mascota-contenedor">
+            <p role="status">Cargando ficha de la mascota…</p>
+          </div>
+        </section>
+      </main>
+    )
+  }
 
   if (!mascota) {
     return (
@@ -74,7 +122,7 @@ export default function DetalleMascotaPage() {
           <div className="contenedor detalle-mascota-contenedor">
             <div className="mascota-no-encontrada">
               <h2>Mascota no encontrada</h2>
-              <p>No existe un paciente registrado con el identificador "{id}".</p>
+              <p>{errorCarga ?? `No existe un paciente registrado con el identificador "${id}".`}</p>
               <Link to="/mascotas" className="volver-listado">
                 Volver al listado de mascotas
               </Link>
@@ -93,9 +141,7 @@ export default function DetalleMascotaPage() {
   /* Agrega o quita la mascota de favoritos */
   const manejarFavorita = () => setFavorita(alternarFavorita(mascota.id))
 
-  /* Registros clínicos que se muestran al abrir las tarjetas de acceso */
-  const historial = obtenerHistorial(mascota.id)
-  const vacunas = obtenerVacunas(mascota.id)
+  /* Los registros clínicos (historial y vacunas) ya se cargaron arriba, en el useEffect */
 
 /* =========================================================
    CITAS SOLICITADAS PARA ESTA MASCOTA
@@ -199,11 +245,7 @@ const citasMascota = esDueño
             {/* Completar o editar los datos (solo el dueño/a) */}
             {esDueño && usuario && (
               <div className="detalle-mascota-completar">
-                <BloqueCompletarMascota
-                  mascota={mascota}
-                  correoSolicitante={usuario.correo}
-                  onGuardado={() => setVersion((v) => v + 1)}
-                />
+                <BloqueCompletarMascota key={version} mascota={mascota} onGuardado={() => setVersion((v) => v + 1)} />
               </div>
             )}
             </div>
@@ -476,7 +518,7 @@ citasMascota.map((cita) => (
               {historial.length === 0 ? (
                 <p className="registros-vacio">Aún no hay atenciones registradas para esta mascota.</p>
               ) : (
-                historial.map((registro, indice) => <TarjetaRegistroClinico key={indice} {...registro} />)
+                historial.map((registro, indice) => <TarjetaRegistroClinico key={registro.id ?? indice} {...registro} />)
               )}
             </div>
           </section>
@@ -490,7 +532,7 @@ citasMascota.map((cita) => (
               {vacunas.length === 0 ? (
                 <p className="registros-vacio">Esta mascota no tiene vacunas registradas.</p>
               ) : (
-                vacunas.map((registro, indice) => <TarjetaVacuna key={indice} {...registro} />)
+                vacunas.map((registro, indice) => <TarjetaVacuna key={registro.id ?? indice} {...registro} />)
               )}
             </div>
           </section>

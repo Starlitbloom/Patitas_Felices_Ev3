@@ -3,12 +3,14 @@
    Estado de la página:
      - editando: alterna entre vista de solo lectura y formulario
      - errorAvatar: mensaje si la foto no se pudo guardar */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { actualizarUsuario } from '../services/usuariosService'
 import { listarCitasDe } from '../services/datosEquipoService'
 import { listarMascotasPorDueno } from '../services/mascotasService'
+import { mensajeDeError } from '../services/api'
+import type { Mascota } from '../types/mascota'
 import { redimensionarImagen, validarArchivoAvatar } from '../utils/imagen'
 import { CabeceraPerfil } from '../componentes/organismos/CabeceraPerfil'
 import { FormularioUsuario, type DatosFormularioUsuario } from '../componentes/organismos/FormularioUsuario'
@@ -22,23 +24,40 @@ export default function PerfilPage() {
   const navigate = useNavigate()
   const [editando, setEditando] = useState(false)
   const [errorAvatar, setErrorAvatar] = useState<string | null>(null)
-  const [, setVersion] = useState(0) // se incrementa al guardar una mascota para volver a leer la lista
+  const [version, setVersion] = useState(0) // se incrementa al guardar una mascota para volver a leer la lista
+
+  /* EP3: las mascotas del dueño vienen de mascota-service (8082) */
+  const [misMascotas, setMisMascotas] = useState<Mascota[]>([])
+  const [errorMascotas, setErrorMascotas] = useState<string | null>(null)
+  const correo = usuario?.correo
+
+  /* Se piden al entrar y cada vez que el dueño guarda cambios en una mascota (version) */
+  useEffect(() => {
+    if (!correo) return
+    let activo = true
+    listarMascotasPorDueno(correo)
+      .then((lista) => {
+        if (!activo) return
+        setMisMascotas(lista)
+        setErrorMascotas(null)
+      })
+      .catch((e) => activo && setErrorMascotas(mensajeDeError(e)))
+    return () => {
+      activo = false
+    }
+  }, [correo, version])
 
   if (!usuario) return null // la ruta ya está protegida; esto solo satisface a TypeScript
 
-  /* Leer las fichas completas del dueño desde el servicio de mascotas.
-     Así también aparecen los controles de edición para mascotas
-     registradas al solicitar una cita, sin depender de un resumen. */
-  const mascotas = listarMascotasPorDueno(usuario.correo).map((m) => ({
+  /* Fichas completas del dueño. Así también aparecen los controles de edición
+     para mascotas registradas al solicitar una cita, sin depender de un resumen. */
+  const mascotas = misMascotas.map((m) => ({
     id: m.id,
     titulo: m.nombre || 'Mascota',
     detalle: [m.especie, m.raza].filter(Boolean).join(' · '),
+    imagen: m.imagen || undefined,
     extra: (
-      <BloqueCompletarMascota
-        mascota={m}
-        correoSolicitante={usuario.correo}
-        onGuardado={() => setVersion((v) => v + 1)}
-      />
+      <BloqueCompletarMascota key={`${m.id}-${version}`} mascota={m} onGuardado={() => setVersion((v) => v + 1)} />
     ),
   }))
   const citas = listarCitasDe(usuario.correo).map((c, i) => ({
@@ -126,7 +145,7 @@ export default function PerfilPage() {
             icono="🐾"
             iconoItem="🐾"
             items={mascotas}
-            textoVacio="Aún no tienes mascotas registradas."
+            textoVacio={errorMascotas ? `⚠️ ${errorMascotas}` : 'Aún no tienes mascotas registradas.'}
             enlace={{ to: '/solicitar-cita', texto: 'Agregar mascota' }}
           />
         </div>

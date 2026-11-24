@@ -16,7 +16,7 @@ export const TEXTO_ESTADO_MASCOTA: Record<EstadoMascota, string> = {
   'pendiente': 'Vacunas pendientes',
 }
 
-/** Mascota tal como se guarda en la fuente de datos (localStorage). */
+/** Mascota tal como la usa el frontend. EP3: viene de mascota-service (el id numérico llega como texto). */
 export interface Mascota{
     id: string
     nombre: string
@@ -54,6 +54,8 @@ export interface FiltrosMascotas{
 ================================================================= */
 
 export interface RegistroClinico{
+    /** Id en historial-service (no lo tiene una atención que aún no se guarda). */
+    id?: string
     fecha: string
     motivo: string
     diagnostico: string
@@ -76,6 +78,8 @@ export const TEXTO_ESTADO_VACUNA: Record<EstadoVacuna, string> = {
 }
 
 export interface RegistroVacuna{
+    /** Id en historial-service (no lo tiene una vacuna que aún no se guarda). */
+    id?: string
     vacuna: string
     fecha: string
     proximoRefuerzo: string

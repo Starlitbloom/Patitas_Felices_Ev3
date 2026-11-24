@@ -2,6 +2,7 @@
    Prueba P10 — Registrar una atención en la ficha clínica
    Archivo probado: src/componentes/organismos/FormularioAtencion.tsx
    Usa un espía (vi.fn) en lugar de la función real que guarda la atención.
+   EP3: el catálogo de servicios viene de servicio-clinico-service (simulado).
 ========================================================= */
 
 // Herramientas de Vitest: expect (comprobar), test (definir una prueba) y vi (crear espías)
@@ -10,6 +11,8 @@ import { expect, test, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 // El formulario que se va a probar
 import { FormularioAtencion } from '../componentes/organismos/FormularioAtencion'
+// Backend simulado: responde GET /servicios como servicio-clinico-service
+import { simularBackend } from './backendSimulado'
 
 // Definición de la prueba: el texto es el nombre que aparecerá en el informe
 test('P10 - CREATE: la atención no se guarda con datos vacíos y sí se guarda al completarlos', () => {
@@ -19,6 +22,8 @@ test('P10 - CREATE: la atención no se guarda con datos vacíos y sí se guarda 
   const tratamiento = 'Ninguno'
   // Espía: una función falsa que anota si el formulario intentó guardar la atención
   const alGuardar = vi.fn()
+  // El formulario pide el catálogo de servicios al backend: se responde con el simulado
+  simularBackend()
 
   // Dibuja el formulario de un perro, sin vacunas registradas; onCancelar recibe otro espía que no se usa
   render(<FormularioAtencion especie="Perro" estadoActual="al-dia" aplicadas={[]} onSubmit={alGuardar} onCancelar={vi.fn()} />)

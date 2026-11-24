@@ -15,10 +15,9 @@ import './styles/estilo-clinico.css'
 import './styles/ajustes-react.css'
 
 import App from './App'
-import { asegurarDatosInicialesMascotas } from './services/mascotasService'
 
-// EP3: los usuarios y las cuentas fijas ya no se cargan aquí: viven en auth-service (MySQL)
-asegurarDatosInicialesMascotas() // carga mascotas, historiales y vacunas de ejemplo
+// EP3: los datos de ejemplo ya no se cargan aquí. Usuarios, mascotas, historial y vacunas
+// viven en los microservicios (MySQL) y cada uno carga sus propios datos al iniciar.
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -3,10 +3,14 @@
    Grupos: Vacunación (según la especie), Cirugía, Desparasitación, Exámenes y Otros.
    - Una vacuna que el paciente ya tiene al día aparece marcada y bloqueada, con su fecha y su refuerzo.
    - Al marcar una vacuna nueva aparece su fecha de próximo refuerzo (por defecto, en un año).
-   Es un componente controlado: el formulario que lo usa guarda lo marcado. */
+   Es un componente controlado: el formulario que lo usa guarda lo marcado.
+   EP3: Cirugía, Desparasitación, Exámenes y Otros se leen de servicio-clinico-service (8084).
+   Las vacunas siguen saliendo del catálogo local (se guardan en historial-service). */
 import { useEffect, useState } from 'react'
 import type { Especie, RegistroVacuna } from '../../types/mascota'
-import { CATALOGO_VACUNAS, GRUPOS_SERVICIOS } from '../../data/serviciosClinica'
+import { CATALOGO_VACUNAS, type GrupoServicios } from '../../data/serviciosClinica'
+import { listarGruposServicios } from '../../services/serviciosClinicosService'
+import { mensajeDeError } from '../../services/api'
 import { buscarVacuna, estadoActualVacuna, refuerzoPorDefecto } from '../../utils/vacunas'
 import { CampoFecha } from '../moleculas/CampoFecha'
 
@@ -38,6 +42,25 @@ export function SelectorServicios({
 
   /* Si el desplegable está abierto */
   const [abierto, setAbierto] = useState(false)
+
+  /* Catálogo de servicios para la especie (viene del backend) y error si no se pudo cargar */
+  const [grupos, setGrupos] = useState<GrupoServicios[]>([])
+  const [errorCatalogo, setErrorCatalogo] = useState<string | null>(null)
+
+  /* Al abrir el formulario (o cambiar la especie) se pide el catálogo a servicio-clinico-service */
+  useEffect(() => {
+    let activo = true
+    listarGruposServicios(especie)
+      .then((lista) => {
+        if (!activo) return
+        setGrupos(lista)
+        setErrorCatalogo(null)
+      })
+      .catch((error) => activo && setErrorCatalogo(mensajeDeError(error)))
+    return () => {
+      activo = false
+    }
+  }, [especie])
 
   /* Si hay un error en alguna fecha de refuerzo, se abre solo para que se vea */
   const hayErrores = Object.keys(erroresVacunas).length > 0
@@ -120,9 +143,11 @@ export function SelectorServicios({
           )}
         </div>
 
-        {/* Cirugía, Desparasitación, Exámenes y Otros: solo los de la especie de la mascota */}
-        {GRUPOS_SERVICIOS.map(({ grupo, servicios: lista }) => {
-          const disponibles = lista.filter((s) => !s.especies || s.especies.includes(especie))
+        {/* Si servicio-clinico-service no respondió, se avisa (las vacunas igual se pueden marcar) */}
+        {errorCatalogo && <p className="campo__ayuda">⚠️ {errorCatalogo}</p>}
+
+        {/* Cirugía, Desparasitación, Exámenes y Otros: el backend ya los entrega filtrados por especie */}
+        {grupos.map(({ grupo, servicios: disponibles }) => {
           if (disponibles.length === 0) return null // grupo sin servicios para esta especie
           return (
             <div className="servicios-grupo" key={grupo}>

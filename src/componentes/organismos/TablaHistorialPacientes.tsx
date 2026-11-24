@@ -1,21 +1,30 @@
 /* ORGANISMO — Tabla de historial clínico por paciente del panel admin.
    Muestra una fila por mascota con sus datos, su última atención y cuántas
    atenciones, vacunas y servicios tiene. Cada fila tiene un botón para abrir
-   el historial completo del paciente. */
-import type { Mascota } from '../../types/mascota'
-import { obtenerHistorial, obtenerVacunas } from '../../services/mascotasService'
+   el historial completo del paciente.
+   EP3: la página carga el historial de cada mascota desde historial-service (8083)
+   y se lo entrega a la tabla ya listo (prop "clinico"). */
+import type { Mascota, RegistroClinico, RegistroVacuna } from '../../types/mascota'
 import { Boton } from '../atomos/Boton'
+
+/** Atenciones y vacunas de una mascota (lo más reciente primero). */
+export interface ResumenClinico {
+  historial: RegistroClinico[]
+  vacunas: RegistroVacuna[]
+}
 
 /* Lo que recibe la tabla desde la página */
 export interface TablaHistorialPacientesProps {
   /** Mascotas que se muestran, una por fila. */
   mascotas: Mascota[]
+  /** Historial y vacunas por id de mascota (si una aún no carga, se muestra vacía). */
+  clinico: Record<string, ResumenClinico>
   /** Se llama al pulsar "Ver historial": abre la ventana con el historial completo. */
   onVer: (mascota: Mascota) => void
   
 }
 
-export function TablaHistorialPacientes({ mascotas, onVer }: TablaHistorialPacientesProps) {
+export function TablaHistorialPacientes({ mascotas, clinico, onVer }: TablaHistorialPacientesProps) {
   /* Si no hay mascotas, en vez de la tabla vacía se muestra un mensaje */
   if (mascotas.length === 0) {
     return <p className="admin-tabla-vacia">No hay pacientes registrados.</p>
@@ -45,8 +54,7 @@ export function TablaHistorialPacientes({ mascotas, onVer }: TablaHistorialPacie
         <tbody>
           {mascotas.map((m) => {
             /* Atenciones y vacunas guardadas de esta mascota (lo más reciente va primero) */
-            const historial = obtenerHistorial(m.id)
-            const vacunas = obtenerVacunas(m.id)
+            const { historial, vacunas } = clinico[m.id] ?? { historial: [], vacunas: [] }
 
             /* Total de servicios realizados: se suman los de todas las atenciones.
                Las atenciones antiguas no tienen servicios, por eso el "?? 0" */

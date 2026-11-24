@@ -1,9 +1,14 @@
 /* ORGANISMO — Formulario de mascota (crear/editar), mismo
-   componente para los dos modos del panel admin. */
+   componente para los dos modos del panel admin.
+   EP3: onSubmit puede ser asíncrono (guarda en mascota-service) y el botón
+   queda deshabilitado mientras espera la respuesta. */
 import { useRef, useState, type FormEvent } from 'react'
 import type { Especie, Mascota, Sexo } from '../../types/mascota'
 import { ESPECIES_MASCOTA, ESTADOS_MASCOTA, TEXTO_ESTADO_MASCOTA } from '../../types/mascota'
 import { hayErrores, validarRequerido } from '../../utils/validaciones'
+
+/* Formato de correo (el backend también lo valida con @Email) */
+const FORMATO_CORREO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 import { redimensionarImagen, validarArchivoAvatar } from '../../utils/imagen'
 import { MensajeError } from '../atomos/MensajeError'
 import { CampoFormulario } from '../moleculas/CampoFormulario'
@@ -43,7 +48,7 @@ export interface FormularioMascotaProps {
   modo: ModoFormularioMascota
   /* Datos de la mascota a editar (en modo crear no se pasa nada) */
   valoresIniciales?: Partial<Mascota>
-  onSubmit: (datos: DatosFormularioMascota) => ErrorFormularioMascota | void
+  onSubmit: (datos: DatosFormularioMascota) => ErrorFormularioMascota | void | Promise<ErrorFormularioMascota | void>
   onCancelar?: () => void
 }
 
@@ -70,6 +75,10 @@ export function validarFormularioMascota(d: DatosEdicion): Errores {
     raza: validarRequerido(d.raza, 'La raza', 40),
     edad: validarRequerido(d.edad, 'La edad', 20),
     dueño: validarRequerido(d.dueño, 'El nombre del dueño/a', 60),
+    // El correo une la mascota con la cuenta del dueño: sin él, el dueño no la vería en "Mis mascotas"
+    correoDueño:
+      validarRequerido(d.correoDueño, 'El correo del dueño/a', 100) ??
+      (FORMATO_CORREO.test(d.correoDueño.trim()) ? null : 'Ingresa un correo válido.'),
     estado: d.estado ? null : 'Selecciona un estado.',
   }
 }
@@ -81,6 +90,10 @@ export function FormularioMascota({ modo, valoresIniciales = {}, onSubmit, onCan
     ...valoresIniciales,
   })
   const [errores, setErrores] = useState<Errores>({})
+  /* Mientras se guarda en el backend */
+  const [guardando, setGuardando] = useState(false)
+  /* Error que no es de un campo (ej: el microservicio no respondió) */
+  const [errorGeneral, setErrorGeneral] = useState<string | null>(null)
 
   /* Referencia al input de archivo, para poder vaciarlo desde el código */
   const inputArchivo = useRef<HTMLInputElement>(null)
@@ -94,7 +107,7 @@ export function FormularioMascota({ modo, valoresIniciales = {}, onSubmit, onCan
     }
 
   /* Al enviar: valida, y si todo está bien entrega los datos a la página */
-  const enviar = (e: FormEvent) => {
+  const enviar = async (e: FormEvent) => {
     e.preventDefault()
     const nuevosErrores = validarFormularioMascota(datos)
     setErrores(nuevosErrores)
@@ -104,8 +117,14 @@ export function FormularioMascota({ modo, valoresIniciales = {}, onSubmit, onCan
     if (estado === '') return
 
     /* Sin foto elegida se guarda la genérica */
-    const errorServicio = onSubmit({ ...datos, estado, imagen: datos.imagen.trim() || IMAGEN_GENERICA })
-    if (errorServicio) setErrores({ [errorServicio.campo]: errorServicio.mensaje })
+    setGuardando(true)
+    setErrorGeneral(null)
+    const errorServicio = await onSubmit({ ...datos, estado, imagen: datos.imagen.trim() || IMAGEN_GENERICA })
+    setGuardando(false)
+    if (!errorServicio) return
+    /* Si el error es de un campo del formulario se marca ese campo; si no, se muestra abajo */
+    if (errorServicio.campo in VALORES_VACIOS) setErrores({ [errorServicio.campo]: errorServicio.mensaje })
+    else setErrorGeneral(errorServicio.mensaje)
   }
 
   /* Foto subida desde el equipo: se reduce y se guarda como texto (base64) */
@@ -264,9 +283,14 @@ export function FormularioMascota({ modo, valoresIniciales = {}, onSubmit, onCan
         maxLength={300}
       />
 
+      {/* Error general del servidor (si lo hay) */}
+      <div className={errorGeneral ? 'campo campo--invalido' : undefined}>
+        <MensajeError mensaje={errorGeneral} id={`${modo}-mascota-error`} />
+      </div>
+
       {/* Botones: guardar y cancelar */}
       <div className="admin-panel-editar-botones admin-botones-compactos">
-        <Boton type="submit">
+        <Boton type="submit" disabled={guardando}>
           {modo === 'crear' ? 'Crear mascota' : 'Guardar cambios'}
         </Boton>
         {onCancelar && (

@@ -1,5 +1,10 @@
-/* PÁGINA — Panel admin de mascotas (ruta /admin/mascotas): CRUD completo. */
-import { useState } from 'react'
+/* PÁGINA — Panel admin de mascotas (ruta /admin/mascotas): CRUD completo.
+   EP3: todo se guarda en los microservicios:
+   - mascotas y solicitudes de cambio → mascota-service (8082)
+   - atenciones y vacunas             → historial-service (8083)
+   - catálogo de servicios            → servicio-clinico-service (8084), desde SelectorServicios
+   Por eso cada acción es asíncrona (await) y, al terminar, se vuelve a pedir la lista. */
+import { useCallback, useEffect, useState } from 'react'
 import type { EstadoMascota, Mascota, RegistroClinico, RegistroVacuna, SolicitudCambio } from '../../types/mascota'
 import {
   actualizarMascota,
@@ -11,14 +16,16 @@ import {
   eliminarVacuna,
   listarMascotas,
   listarSolicitudesPendientes,
+  obtenerHistorial,
   obtenerVacunas,
   rechazarSolicitud,
 } from '../../services/mascotasService'
+import { mensajeDeError } from '../../services/api'
 import { EncabezadoAdmin } from '../../componentes/organismos/EncabezadoAdmin'
 import { FiltrosMascotasAdmin, type FiltrosMascotasAdminValor } from '../../componentes/organismos/FiltrosMascotasAdmin'
 import { TablaMascotas } from '../../componentes/organismos/TablaMascotas'
 import { TablaSolicitudesMascotas } from '../../componentes/organismos/TablaSolicitudesMascotas'
-import { TablaHistorialPacientes } from '../../componentes/organismos/TablaHistorialPacientes'
+import { TablaHistorialPacientes, type ResumenClinico } from '../../componentes/organismos/TablaHistorialPacientes'
 import { DetalleHistorialPaciente } from '../../componentes/organismos/DetalleHistorialPaciente'
 import { Modal } from '../../componentes/organismos/Modal'
 import { ModalConfirmacion } from '../../componentes/organismos/ModalConfirmacion'
@@ -34,16 +41,21 @@ type EstadoModal = { tipo: 'crear' } | { tipo: 'editar'; mascota: Mascota } | nu
 type EstadoClinico = { tipo: 'atencion' | 'vacuna'; mascota: Mascota } | null
 
 export default function MascotasPage() {
-  const [mascotas, setMascotas] = useState<Mascota[]>(() => listarMascotas())
+  const [mascotas, setMascotas] = useState<Mascota[]>([])
   const [filtros, setFiltros] = useState<FiltrosMascotasAdminValor>(FILTROS_INICIALES)
   const [modal, setModal] = useState<EstadoModal>(null)
   const [aEliminar, setAEliminar] = useState<Mascota | null>(null)
-  const [solicitudes, setSolicitudes] = useState<SolicitudCambio[]>(() => listarSolicitudesPendientes())
+  const [solicitudes, setSolicitudes] = useState<SolicitudCambio[]>([])
   const [aRechazar, setARechazar] = useState<SolicitudCambio | null>(null)
   const [aviso, setAviso] = useState<string | null>(null)
   const [clinico, setClinico] = useState<EstadoClinico>(null)
     /* Paciente cuyo historial se está viendo (null = ventana cerrada) */
   const [verHistorial, setVerHistorial] = useState<Mascota | null>(null)
+  /* Historial y vacunas de cada mascota (para la tabla de historial y los formularios clínicos) */
+  const [resumenClinico, setResumenClinico] = useState<Record<string, ResumenClinico>>({})
+  /* Mientras se cargan los datos la primera vez, y error si un microservicio no respondió */
+  const [cargando, setCargando] = useState(true)
+  const [errorCarga, setErrorCarga] = useState<string | null>(null)
 
   const visibles = mascotas.filter(
     (m) =>
@@ -51,74 +63,139 @@ export default function MascotasPage() {
       (!filtros.especie || m.especie === filtros.especie),
   )
 
-  const recargar = () => {
-    setMascotas(listarMascotas())
-    setSolicitudes(listarSolicitudesPendientes())
-  }
+  /* Pide el historial y las vacunas de UNA mascota y los guarda en el mapa "resumenClinico" */
+  const cargarClinico = useCallback(async (id: string) => {
+    const [historial, vacunas] = await Promise.all([obtenerHistorial(id), obtenerVacunas(id)])
+    setResumenClinico((prev) => ({ ...prev, [id]: { historial, vacunas } }))
+  }, [])
+
+  /* Pide todo a los microservicios: mascotas, solicitudes pendientes y el historial de cada mascota */
+  const pedirTodo = useCallback(async () => {
+    const [lista, pendientes] = await Promise.all([listarMascotas(), listarSolicitudesPendientes()])
+    const clinicos = await Promise.all(
+      lista.map(async (m) => {
+        const [historial, vacunas] = await Promise.all([obtenerHistorial(m.id), obtenerVacunas(m.id)])
+        return [m.id, { historial, vacunas }] as const
+      }),
+    )
+    return { lista, pendientes, clinico: Object.fromEntries(clinicos) as Record<string, ResumenClinico> }
+  }, [])
+
+  /* Guarda en pantalla lo que respondió el backend (o el error si un microservicio no respondió) */
+  const aplicar = useCallback((resultado: Awaited<ReturnType<typeof pedirTodo>> | { error: string }) => {
+    if ('error' in resultado) {
+      setErrorCarga(resultado.error)
+    } else {
+      setMascotas(resultado.lista)
+      setSolicitudes(resultado.pendientes)
+      setResumenClinico(resultado.clinico)
+      setErrorCarga(null)
+    }
+    setCargando(false)
+  }, [])
+
+  /* Vuelve a pedir todo (se usa después de crear, editar, eliminar, aprobar...) */
+  const recargar = useCallback(async () => {
+    aplicar(await pedirTodo().catch((error) => ({ error: mensajeDeError(error) })))
+  }, [pedirTodo, aplicar])
+
+  /* Al entrar al panel se cargan los datos */
+  useEffect(() => {
+    let activo = true
+    pedirTodo()
+      .catch((error) => ({ error: mensajeDeError(error) }))
+      .then((resultado) => activo && aplicar(resultado))
+    return () => {
+      activo = false
+    }
+  }, [pedirTodo, aplicar])
+
+  /* Vacunas registradas de una mascota (para avisar en los formularios cuáles ya tiene) */
+  const vacunasDe = (id: string) => resumenClinico[id]?.vacunas ?? []
 
   const nombreMascota = (id: string) => mascotas.find((m) => m.id === id)?.nombre ?? id
     /* Foto actual de la mascota (para la tabla de solicitudes) */
   const imagenMascota = (id: string) => mascotas.find((m) => m.id === id)?.imagen ?? ''
 
-  const aprobar = (solicitud: SolicitudCambio) => {
-    aprobarSolicitud(solicitud.id)
-    recargar()
-    setAviso(`Cambios de ${nombreMascota(solicitud.mascotaId)} aprobados.`)
+  const aprobar = async (solicitud: SolicitudCambio) => {
+    const resultado = await aprobarSolicitud(solicitud.id)
+    setAviso(resultado.ok ? `Cambios de ${nombreMascota(solicitud.mascotaId)} aprobados.` : `⚠️ ${resultado.mensaje}`)
+    await recargar()
   }
 
-  const confirmarRechazo = () => {
+  const confirmarRechazo = async () => {
     if (!aRechazar) return
-    rechazarSolicitud(aRechazar.id)
-    setAviso(`Solicitud de ${nombreMascota(aRechazar.mascotaId)} rechazada.`)
+    const resultado = await rechazarSolicitud(aRechazar.id)
+    setAviso(resultado.ok ? `Solicitud de ${nombreMascota(aRechazar.mascotaId)} rechazada.` : `⚠️ ${resultado.mensaje}`)
     setARechazar(null)
-    recargar()
+    await recargar()
   }
 
-  const crear = (datos: DatosFormularioMascota) => {
-    const resultado = crearMascota({ ...datos, especie: datos.especie || 'Perro', completo: true })
+  const crear = async (datos: DatosFormularioMascota) => {
+    const resultado = await crearMascota({ ...datos, especie: datos.especie || 'Perro', completo: true })
     if (!resultado.ok) return { campo: resultado.campo, mensaje: resultado.mensaje }
-    recargar()
     setModal(null)
     setAviso(`Mascota ${resultado.dato.nombre} creada correctamente.`)
+    await recargar()
   }
 
-  const editar = (id: string) => (datos: DatosFormularioMascota) => {
-    const resultado = actualizarMascota(id, { ...datos, especie: datos.especie || 'Perro' })
+  const editar = (id: string) => async (datos: DatosFormularioMascota) => {
+    const resultado = await actualizarMascota(id, { ...datos, especie: datos.especie || 'Perro' })
     if (!resultado.ok) return { campo: resultado.campo, mensaje: resultado.mensaje }
-    recargar()
     setModal(null)
     setAviso(`Cambios de ${resultado.dato.nombre} guardados.`)
+    await recargar()
   }
 
-  const confirmarEliminacion = () => {
+  const confirmarEliminacion = async () => {
     if (!aEliminar) return
-    eliminarMascota(aEliminar.id)
-    setAviso(`Mascota ${aEliminar.nombre} eliminada.`)
+    const resultado = await eliminarMascota(aEliminar.id)
+    setAviso(resultado.ok ? `Mascota ${aEliminar.nombre} eliminada.` : `⚠️ ${resultado.mensaje}`)
     setAEliminar(null)
-    recargar()
+    await recargar()
   }
     /* Guarda la atención en el historial, las vacunas marcadas en el calendario del paciente
      y, si el veterinario cambió el estado del paciente, lo actualiza */
   const guardarAtencion =
-    (mascota: Mascota) => (registro: RegistroClinico, estado: EstadoMascota, vacunasNuevas: RegistroVacuna[]) => {
-      agregarRegistroClinico(mascota.id, registro)
-      vacunasNuevas.forEach((vacuna) => agregarVacuna(mascota.id, vacuna))
-      if (estado !== mascota.estado) actualizarMascota(mascota.id, { estado })
-      recargar() // vuelve a leer la tabla para que se vea el estado nuevo
+    (mascota: Mascota) => async (registro: RegistroClinico, estado: EstadoMascota, vacunasNuevas: RegistroVacuna[]) => {
       setClinico(null)
-      setAviso(`Atención de ${mascota.nombre} registrada correctamente.`)
+      try {
+        await agregarRegistroClinico(mascota.id, registro) // historial-service
+        for (const vacuna of vacunasNuevas) await agregarVacuna(mascota.id, vacuna) // historial-service
+        if (estado !== mascota.estado) {
+          const resultado = await actualizarMascota(mascota.id, { estado }) // mascota-service
+          if (!resultado.ok) throw new Error(resultado.mensaje)
+        }
+        setAviso(`Atención de ${mascota.nombre} registrada correctamente.`)
+      } catch (error) {
+        setAviso(`⚠️ ${error instanceof Error ? error.message : mensajeDeError(error)}`)
+      }
+      await recargar() // vuelve a leer la tabla para que se vea el estado nuevo
     }
 
-  /* Guarda la vacuna en el calendario de la mascota y cierra el formulario */
-  const guardarVacuna = (mascota: Mascota) => (registro: RegistroVacuna) => {
-    agregarVacuna(mascota.id, registro)
+  /* Guarda la vacuna en el calendario de la mascota (historial-service) y cierra el formulario */
+  const guardarVacuna = (mascota: Mascota) => async (registro: RegistroVacuna) => {
     setClinico(null)
-    setAviso(`Vacuna de ${mascota.nombre} registrada correctamente.`)
+    try {
+      await agregarVacuna(mascota.id, registro)
+      setAviso(`Vacuna de ${mascota.nombre} registrada correctamente.`)
+    } catch (error) {
+      setAviso(`⚠️ ${mensajeDeError(error)}`)
+    }
+    await cargarClinico(mascota.id).catch(() => {}) // si historial-service no responde, la tabla queda como estaba
   }
-    /* Quita un registro de vacuna (ej: uno de prueba o mal ingresado) y refresca el aviso del formulario */
-  const quitarVacuna = (mascota: Mascota) => (indice: number) => {
-    eliminarVacuna(mascota.id, indice)
-    recargar() // vuelve a dibujar la página para que el aviso muestre las vacunas actualizadas
+
+  /* Quita un registro de vacuna (ej: uno de prueba o mal ingresado) y refresca el aviso del formulario.
+     El formulario entrega la posición en la lista; con ella se busca el id real de la vacuna. */
+  const quitarVacuna = (mascota: Mascota) => async (indice: number) => {
+    const vacuna = vacunasDe(mascota.id)[indice]
+    if (!vacuna?.id) return
+    try {
+      await eliminarVacuna(vacuna.id)
+    } catch (error) {
+      setAviso(`⚠️ ${mensajeDeError(error)}`)
+    }
+    await cargarClinico(mascota.id).catch(() => {})
   }
 
   return (
@@ -133,6 +210,13 @@ export default function MascotasPage() {
           </button>
         </div>
       )}
+
+      {errorCarga && (
+        <div className="admin-aviso" role="alert">
+          ⚠️ {errorCarga}
+        </div>
+      )}
+      {cargando && <p role="status">Cargando mascotas…</p>}
 
       <div className="admin-seccion-cabecera">
         <div>
@@ -188,6 +272,7 @@ export default function MascotasPage() {
         {/* Usa la lista filtrada: el buscador de arriba también aplica aquí */}
         <TablaHistorialPacientes
           mascotas={visibles}
+          clinico={resumenClinico}
           onVer={setVerHistorial}
         />
       </section>
@@ -217,7 +302,7 @@ export default function MascotasPage() {
             key={clinico.mascota.id}
             especie={clinico.mascota.especie}
             estadoActual={clinico.mascota.estado}
-            aplicadas={obtenerVacunas(clinico.mascota.id)}
+            aplicadas={vacunasDe(clinico.mascota.id)}
             onSubmit={guardarAtencion(clinico.mascota)}
             onCancelar={() => setClinico(null)}
           />
@@ -226,7 +311,7 @@ export default function MascotasPage() {
           <FormularioVacuna
             key={clinico.mascota.id}
             especie={clinico.mascota.especie}
-            aplicadas={obtenerVacunas(clinico.mascota.id)}
+            aplicadas={vacunasDe(clinico.mascota.id)}
             onSubmit={guardarVacuna(clinico.mascota)}
             onCancelar={() => setClinico(null)}
             onEliminar={quitarVacuna(clinico.mascota)}

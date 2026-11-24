@@ -3,7 +3,7 @@
    REGISTRAR MASCOTA DESDE SOLICITAR CITA
 
    - Guarda la mascota al registrar una cita.
-   - Utiliza el almacenamiento de Mis mascotas.
+   - EP3: la guarda en mascota-service (8082), igual que "Mis mascotas".
    - Evita crear mascotas duplicadas.
    - Asigna una imagen según la especie.
    - Permite completar sus datos posteriormente.
@@ -12,14 +12,9 @@
 import type { Mascota } from '../types/mascota'
 
 import {
-  generarIdMascota,
+  crearMascota,
   listarMascotas
 } from './mascotasService'
-
-import {
-  CLAVES,
-  guardarColeccion
-} from './almacenamiento'
 
 /* =========================================================
    DATOS RECIBIDOS DESDE SOLICITAR CITA
@@ -64,11 +59,11 @@ function obtenerImagenMascota(
    REGISTRAR MASCOTA
 ========================================================= */
 
-export function registrarMascotaDesdeCita(
+export async function registrarMascotaDesdeCita(
   datos: MascotaDeCita
-): Mascota {
-  /* Obtener todas las mascotas registradas */
-  const lista = listarMascotas()
+): Promise<Mascota> {
+  /* Obtener las mascotas que ve el usuario (un cliente solo recibe las suyas) */
+  const lista = await listarMascotas()
 
   const nombre = datos.nombre.trim()
   const correoDueño = datos.correoDueño.trim()
@@ -90,9 +85,8 @@ export function registrarMascotaDesdeCita(
     return existente
   }
 
-  /* Crear nueva mascota */
-  const nueva: Mascota = {
-    id: generarIdMascota(),
+  /* Crear nueva mascota (incompleta: el dueño completa raza, sexo y peso después) */
+  const resultado = await crearMascota({
     nombre,
     especie: datos.especie,
     edad: datos.edad,
@@ -105,13 +99,12 @@ export function registrarMascotaDesdeCita(
     imagen: obtenerImagenMascota(datos.especie),
     estado: 'pendiente',
     descripcion: ''
+  })
+
+  /* Si el backend la rechazó, quien llama muestra el aviso */
+  if (!resultado.ok) {
+    throw new Error(resultado.mensaje)
   }
 
-  /* Guardar la mascota */
-  guardarColeccion(
-    CLAVES.mascotas,
-    [...lista, nueva]
-  )
-
-  return nueva
+  return resultado.dato
 }

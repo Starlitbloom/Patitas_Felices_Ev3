@@ -15,9 +15,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 
 import {registrarMascotaDesdeCita} from '../../services/registroMascotaCitaService'
 import { listarMascotasPorDueno } from '../../services/mascotasService'
-
-
-
+import type { Mascota } from '../../types/mascota'
 import { useAuth } from '../../context/AuthContext'
 
 
@@ -886,9 +884,27 @@ useEffect(() => {
    MASCOTAS REGISTRADAS DEL USUARIO
 ========================================= */
 
-const mascotasRegistradas = usuario
-  ? listarMascotasPorDueno(usuario.correo)
-  : []
+/* EP3: vienen de mascota-service (8082). Mientras llegan, la lista está vacía. */
+const [mascotasRegistradas, setMascotasRegistradas] =
+  useState<Mascota[]>([])
+
+const correoSesion = usuario?.correo
+
+useEffect(() => {
+  if (!correoSesion) return
+  let activo = true
+  listarMascotasPorDueno(correoSesion)
+    .then((lista) => {
+      if (activo) setMascotasRegistradas(lista)
+    })
+    .catch(() => {
+      /* Si mascota-service no responde, se puede reservar igual como mascota nueva */
+      if (activo) setMascotasRegistradas([])
+    })
+  return () => {
+    activo = false
+  }
+}, [correoSesion])
 
 const [modoReserva, setModoReserva] =
   useState<'nueva' | 'registrada'>('nueva')
@@ -1792,7 +1808,7 @@ if (especieRegistrada && modoReserva === 'nueva') {
 
   try {
 
-    registrarMascotaDesdeCita({
+    await registrarMascotaDesdeCita({
 
       nombre: datos.nombreMascota,
 
