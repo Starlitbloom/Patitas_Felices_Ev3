@@ -69,7 +69,7 @@ export default function DetalleVeterinarioPage() {
      Se ejecuta al abrir la página o cambiar el ID.
 
      Ejemplo:
-     GET http://localhost:8085/api/veterinarios/2
+     GET http://localhost:8080/veterinario/api/v1/veterinarios/2
   ===================================================== */
 
   useEffect(() => {

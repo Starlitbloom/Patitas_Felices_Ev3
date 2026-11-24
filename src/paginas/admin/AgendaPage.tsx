@@ -3,9 +3,10 @@
    3 médicos veterinarios por hora. Es SOLO DE LECTURA: para confirmar,
    reprogramar o cancelar se usa la página de Citas (módulo de citas).
    Estado: semana y día elegidos, filtro de estado y cita abierta en el modal. */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { HORARIOS_CITAS, listarCitas, type Cita } from '../../services/citasService'
+import { cargarCitas, HORARIOS_CITAS, type Cita } from '../../services/citasService'
+import { mensajeDeError } from '../../services/api'
 import { listarVeterinarios } from '../../services/veterinariosService'
 import { aTextoFecha, diasHabiles, generarAgendaDia, lunesDeLaSemana } from '../../services/agendaService'
 import { EncabezadoAdmin } from '../../componentes/organismos/EncabezadoAdmin'
@@ -33,9 +34,26 @@ export default function AgendaPage() {
   const [fecha, setFecha] = useState<string>(() => aTextoFecha(inicio))
   const [estado, setEstado] = useState<FiltroEstado>('Todas')
   const [citaAbierta, setCitaAbierta] = useState<Cita | null>(null)
+  const [todasLasCitas, setTodasLasCitas] = useState<Cita[]>([])
+  const [error, setError] = useState('')
+
+  // Las citas vienen de cita-service (MySQL)
+  useEffect(() => {
+    let activo = true
+    cargarCitas()
+      .then((lista) => {
+        if (activo) setTodasLasCitas(lista)
+      })
+      .catch((e: unknown) => {
+        if (activo) setError(mensajeDeError(e))
+      })
+    return () => {
+      activo = false
+    }
+  }, [])
 
   const medicos = listarVeterinarios().filter((v) => v.cargo === 'Médico veterinario')
-  const citas = listarCitas().filter((c) => estado === 'Todas' || c.estado === estado)
+  const citas = todasLasCitas.filter((c) => estado === 'Todas' || c.estado === estado)
   const agenda = generarAgendaDia(fecha, medicos, citas)
   const dias = diasHabiles(lunes)
   const hoy = aTextoFecha(new Date())
@@ -49,6 +67,12 @@ export default function AgendaPage() {
   return (
     <>
       <EncabezadoAdmin>Agenda de la clínica 📅</EncabezadoAdmin>
+
+      {error && (
+        <div className="admin-aviso admin-aviso--error" role="alert">
+          <span>{error}</span>
+        </div>
+      )}
 
       <section className="admin-kpis agenda-kpis">
         <TarjetaKpi icono="📋" numero={agenda.resumen.citas} etiqueta="Citas del día" />

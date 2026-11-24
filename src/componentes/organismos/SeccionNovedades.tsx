@@ -1,11 +1,55 @@
-/* ORGANISMO — Adelanto de novedades con enlace a la página completa. */
+/* ORGANISMO — Adelanto de novedades con enlace a la página completa.
+   EP3: muestra las 2 publicaciones más recientes de novedad-service;
+   si el servicio no responde, se usan los textos fijos de la portada. */
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { NOVEDADES_DESTACADAS } from '../../data/contenidoInicio'
+import { listarNovedades } from '../../services/novedadesService'
 import { Etiqueta } from '../atomos/Etiqueta'
+
+const ICONO_CATEGORIA: Record<string, string> = {
+  Salud: '💉',
+  Prevención: '🩺',
+  Bienestar: '🥕',
+  Consejos: '💡',
+}
+
+interface MiniNovedad {
+  icono: string
+  titulo: string
+  fecha: string
+  enlace: string
+}
+
+const RESPALDO: MiniNovedad[] = NOVEDADES_DESTACADAS.map((n) => ({ ...n, enlace: '/novedades' }))
 
 const TEMAS = ['Salud', 'Bienestar', 'Prevención', 'Consejos']
 
 export function SeccionNovedades() {
+  const [ultimas, setUltimas] = useState<MiniNovedad[]>(RESPALDO)
+
+  useEffect(() => {
+    let activo = true
+    listarNovedades()
+      .then((lista) => {
+        if (!activo || lista.length === 0) return
+        setUltimas(
+          lista.slice(0, 2).map((n) => ({
+            icono: ICONO_CATEGORIA[n.categoria] ?? '🐾',
+            titulo: n.titulo,
+            fecha: n.fecha,
+            enlace: `/detalle-novedad?articulo=${n.id}`,
+          }))
+        )
+      })
+      .catch(() => {
+        // Sin novedad-service se mantienen los textos de respaldo
+      })
+    return () => {
+      activo = false
+    }
+  }, [])
+
   return (
     <section className="quienes-somos">
       <div className="quienes-contenido">
@@ -21,8 +65,8 @@ export function SeccionNovedades() {
             ))}
           </div>
           <div className="quienes-mini-lista">
-            {NOVEDADES_DESTACADAS.map((n) => (
-              <Link key={n.titulo} to="/novedades" className="quienes-mini-item">
+            {ultimas.map((n) => (
+              <Link key={n.titulo} to={n.enlace} className="quienes-mini-item">
                 <span className="quienes-mini-icono">{n.icono}</span>
                 <div className="quienes-mini-texto">
                   <h4>{n.titulo}</h4>

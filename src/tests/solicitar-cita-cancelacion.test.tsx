@@ -1,20 +1,26 @@
 
 /* P14 - Cancelar una cita y liberar el horario */
 
-import { beforeEach, expect, test } from 'vitest'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import {
   actualizarCita,
   crearCita,
   horasOcupadas,
-  listarCitas
+  listarCitas,
+  reemplazarCacheCitas
 } from '../services/citasService'
 
 import { datosCitaPrueba } from './datos-citas'
 
-beforeEach(() => localStorage.clear())
+beforeEach(() => {
+  localStorage.clear()
+  reemplazarCacheCitas([])
+})
 
-test('P14 - cancela una cita y libera el horario', () => {
+afterEach(() => vi.unstubAllGlobals())
+
+test('P14 - cancela una cita y libera el horario', async () => {
 
   const datos = datosCitaPrueba()
   const creada = crearCita(datos)
@@ -31,7 +37,15 @@ test('P14 - cancela una cita y libera el horario', () => {
     )
   ).toContain('10:00')
 
-  const cancelada = actualizarCita(creada.dato.id, {
+  // cita-service responde la cita con el nuevo estado (PATCH /citas/{id}/estado)
+  vi.stubGlobal('fetch', vi.fn(async () =>
+    new Response(JSON.stringify({ ...creada.dato, estado: 'Cancelada' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    })
+  ))
+
+  const cancelada = await actualizarCita(creada.dato.id, {
     estado: 'Cancelada'
   })
 

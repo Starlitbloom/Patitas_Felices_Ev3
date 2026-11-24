@@ -9,12 +9,20 @@
       para celulares, tablets y computadores.
 ========================================================= */
 
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import EquipoPage from '../paginas/EquipoPage'
+import { VETERINARIOS } from '../data/veterinarios'
 
-test('P03 - FILTRO Y RESPONSIVIDAD: filtrar profesionales y verificar diseño responsivo', () => {
+// EquipoPage pide el equipo a veterinario-service: en la prueba se simula
+// esa respuesta con los mismos 5 integrantes de los datos de ejemplo.
+vi.mock('../services/veterinariosService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/veterinariosService')>()),
+  consultarVeterinariosApi: vi.fn(async () => VETERINARIOS),
+}))
+
+test('P03 - FILTRO Y RESPONSIVIDAD: filtrar profesionales y verificar diseño responsivo', async () => {
 
   // Datos de prueba
   const cargo = 'Médico veterinario'
@@ -30,7 +38,7 @@ test('P03 - FILTRO Y RESPONSIVIDAD: filtrar profesionales y verificar diseño re
   // 1. COMPROBAR RESPONSIVIDAD
 
   const columnasIniciales =
-    screen.getAllByTestId('columna-veterinario')
+    await screen.findAllByTestId('columna-veterinario')
 
   // Deben mostrarse los 5 integrantes del equipo
   expect(columnasIniciales).toHaveLength(5)

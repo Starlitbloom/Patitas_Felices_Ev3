@@ -152,7 +152,7 @@ export function simularBackend() {
 
   const fetchSimulado = vi.fn(async (url: RequestInfo | URL, init: RequestInit = {}) => {
     const direccion = new URL(String(url))
-    const ruta = direccion.pathname.replace('/api/v1', '') + direccion.search
+    const ruta = direccion.pathname.replace(/^.*\/api\/v1/, '') + direccion.search
     const metodo = init.method ?? 'GET'
     const cuerpo = init.body ? JSON.parse(String(init.body)) : undefined
     const auth = new Headers(init.headers).get('Authorization')
@@ -231,7 +231,7 @@ export function simularBackend() {
     }
     /* ---------- mascota-service (8082) ---------- */
     const esPersonal = esAdmin || yo.rol.nombre === 'RECEPCIONISTA'
-    const camino = direccion.pathname.replace('/api/v1', '')
+    const camino = direccion.pathname.replace(/^.*\/api\/v1/, '')
     const esDe = (m: MascotaApi) => esPersonal || m.correoDueno.toLowerCase() === yo.correo.toLowerCase()
     const completa = (m: MascotaApi) => !!(m.raza && m.sexo && m.peso && m.imagen)
 

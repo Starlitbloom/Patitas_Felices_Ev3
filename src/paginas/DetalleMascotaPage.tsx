@@ -16,7 +16,7 @@ import {
 } from '../services/mascotasService'
 import { mensajeDeError } from '../services/api'
 import { TEXTO_ESTADO_MASCOTA, type Mascota, type RegistroClinico, type RegistroVacuna } from '../types/mascota'
-import { listarCitasUsuario } from '../services/citasService'
+import { cargarMisCitas, type Cita } from '../services/citasService'
 import { obtenerEspecieCita } from '../services/catalogoCitasService'
 
 import { HeroDetalleMascota } from '../componentes/organismos/HeroDetalleMascota'
@@ -70,6 +70,23 @@ export default function DetalleMascotaPage() {
 
   /* Si la mascota está en favoritos */
   const [favorita, setFavorita] = useState(() => (id ? esFavorita(id) : false))
+
+  /* Citas del usuario con sesión, desde cita-service (GET /citas/mis-citas) */
+  const [misCitas, setMisCitas] = useState<Cita[]>([])
+  useEffect(() => {
+    if (!usuario) return
+    let activo = true
+    cargarMisCitas()
+      .then((lista) => {
+        if (activo) setMisCitas(lista)
+      })
+      .catch(() => {
+        // Si cita-service no responde, la ficha se muestra igual sin la sección de citas
+      })
+    return () => {
+      activo = false
+    }
+  }, [usuario])
 
   /* Se incrementa al guardar cambios para volver a leer la mascota */
   const [version, setVersion] = useState(0)
@@ -154,7 +171,7 @@ export default function DetalleMascotaPage() {
 ========================================================= */
 
 const citasMascota = esDueño
-  ? listarCitasUsuario(usuario.correo)
+  ? misCitas
       .filter((cita) => {
 
         const mismoNombre =

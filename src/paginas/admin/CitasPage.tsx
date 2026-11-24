@@ -16,7 +16,7 @@
    - Respetar la duración de cada atención.
 ========================================================= */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 
 import { EncabezadoAdmin }
@@ -27,6 +27,7 @@ import { obtenerVeterinarioPorId }
 
 import {
   actualizarCita,
+  cargarCitas,
   fechaLocalHoy,
   HORARIOS_CITAS,
   horasOcupadas,
@@ -37,6 +38,8 @@ import type {
   Cita,
   EstadoCita
 } from '../../services/citasService'
+
+import { mensajeDeError } from '../../services/api'
 
 import '../../styles/estilo-admin-citas.css'
 
@@ -487,8 +490,30 @@ export default function CitasPage() {
   ===================================================== */
 
   function recargar() {
-    setCitas(listarCitas())
+    cargarCitas()
+      .then(setCitas)
+      .catch((error: unknown) => {
+        setAviso(mensajeDeError(error))
+        setAvisoError(true)
+      })
   }
+
+  /* Al abrir la página se piden las citas a cita-service. */
+  useEffect(() => {
+    let activo = true
+    cargarCitas()
+      .then((lista) => {
+        if (activo) setCitas(lista)
+      })
+      .catch((error: unknown) => {
+        if (!activo) return
+        setAviso(mensajeDeError(error))
+        setAvisoError(true)
+      })
+    return () => {
+      activo = false
+    }
+  }, [])
 
   function limpiarFiltros() {
 
@@ -506,7 +531,7 @@ export default function CitasPage() {
      Confirmada -> Completada o Cancelada.
   ===================================================== */
 
-  function guardarEstado() {
+  async function guardarEstado() {
 
     if (!confirmacion || !citaAccion) {
       return
@@ -541,7 +566,7 @@ export default function CitasPage() {
       return
     }
 
-    const resultado = actualizarCita(
+    const resultado = await actualizarCita(
       citaAccion.id,
       { estado: nuevo }
     )
@@ -730,7 +755,7 @@ export default function CitasPage() {
      los datos antes de guardarlos.
   ===================================================== */
 
-  function guardarReagenda(
+  async function guardarReagenda(
     evento: FormEvent<HTMLFormElement>
   ) {
 
@@ -852,7 +877,7 @@ export default function CitasPage() {
 
     /* Guardar utilizando el servicio existente. */
 
-    const resultado = actualizarCita(
+    const resultado = await actualizarCita(
       citaReagenda.id,
       {
         fecha: nuevaFecha,
@@ -1657,7 +1682,7 @@ export default function CitasPage() {
 
             <form
               className="admin-citas-form-reagendar"
-              onSubmit={guardarReagenda}
+              onSubmit={(evento) => void guardarReagenda(evento)}
             >
 
 
@@ -1896,7 +1921,7 @@ export default function CitasPage() {
                       : ''
                   }`
                 }
-                onClick={guardarEstado}
+                onClick={() => void guardarEstado()}
               >
 
                 Sí, {textoAccion(

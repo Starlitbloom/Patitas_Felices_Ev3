@@ -11,10 +11,12 @@
 
 ========================================================= */
 
+import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
-// Datos de las publicaciones.
-import { NOVEDADES } from '../data/contenidoNovedades'
+// Datos de las publicaciones (novedad-service).
+import type { Novedad } from '../data/contenidoNovedades'
+import { claveArticulo, obtenerNovedad } from '../services/novedadesService'
 
 // Textos completos de los artículos.
 import { DETALLES_NOVEDADES } from '../data/detalleNovedades'
@@ -34,18 +36,37 @@ function DetalleNovedadPage() {
   const [parametros] = useSearchParams()
   const id = parametros.get('articulo')
 
-  // Buscamos la noticia seleccionada.
-  const novedad = NOVEDADES.find(
-    (item) => item.id === id
-  )
+  // EP3: la noticia se pide a novedad-service
+  // Se guarda junto con el id pedido: mientras no coincida con el de la URL, está cargando.
+  const [resultado, setResultado] = useState<{ id: string | null; novedad: Novedad | null } | null>(null)
 
-  // Buscamos el contenido completo.
-  const detalle = id
-    ? DETALLES_NOVEDADES[id]
-    : undefined
+  useEffect(() => {
+    let activo = true
+    obtenerNovedad(id ?? '').then((encontrada) => {
+      if (activo) setResultado({ id, novedad: encontrada })
+    })
+    return () => {
+      activo = false
+    }
+  }, [id])
+
+  const cargando = resultado?.id !== id
+  const novedad = cargando ? null : resultado.novedad
+
+  // Las publicaciones originales tienen además un artículo extendido.
+  const clave = novedad ? claveArticulo(novedad.titulo) : null
+  const detalle = clave ? DETALLES_NOVEDADES[clave] : undefined
+
+  if (cargando) {
+    return (
+      <main className="container py-5 text-center">
+        <p role="status">Cargando artículo…</p>
+      </main>
+    )
+  }
 
   // Si el artículo no existe, mostramos un mensaje.
-  if (!novedad || !detalle) {
+  if (!novedad) {
     return (
       <main className="container py-5 text-center">
         <h1>Artículo no encontrado</h1>
@@ -117,6 +138,7 @@ function DetalleNovedadPage() {
           CONTENIDO DEL ARTÍCULO
       ========================================= */}
 
+      {detalle && (
       <section className="seccion-contenido-articulo">
         <div className="contenedor">
 
@@ -176,6 +198,7 @@ function DetalleNovedadPage() {
 
         </div>
       </section>
+      )}
 
       {/* =========================================
           VOLVER A NOVEDADES

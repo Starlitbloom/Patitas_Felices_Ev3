@@ -599,3 +599,23 @@ button.admin-nav-item {
         right: 16px;
     }
 }
+
+/* ===== Admin → Novedades (formulario) ===== */
+.admin-novedad-form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.admin-novedad-form .admin-buscador,
+.admin-novedad-form .admin-select {
+    width: 100%;
+}
+
+.admin-novedad-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+    color: rgba(255, 255, 255, 0.8);
+}

@@ -5,12 +5,16 @@ import { beforeEach, expect, test } from 'vitest'
 
 import {
   crearCita,
-  listarCitas
+  listarCitas,
+  reemplazarCacheCitas
 } from '../services/citasService'
 
 import { datosCitaPrueba } from './datos-citas'
 
-beforeEach(() => localStorage.clear())
+beforeEach(() => {
+  localStorage.clear()
+  reemplazarCacheCitas([])
+})
 
 test('P12 - rechaza un veterinario incompatible con el servicio', () => {
 

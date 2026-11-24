@@ -27,6 +27,7 @@ import ReportesPage from '../paginas/admin/ReportesPage'
 import AgendaPage from '../paginas/admin/AgendaPage'
 import CitasPage from '../paginas/admin/CitasPage'
 import MensajesPage from '../paginas/admin/MensajesPage'
+import NovedadesAdminPage from '../paginas/admin/NovedadesAdminPage'
 import MisMensajesPage from '../paginas/MisMensajesPage'
 
 /* =========================================================
@@ -117,6 +118,8 @@ export function AppRoutes() {
         <Route path="agenda" element={<AgendaPage />} />
         {/* EP3: bandeja de contacto (contacto-service) — admin y recepcionista */}
         <Route path="mensajes" element={<MensajesPage />} />
+        {/* EP3: novedades del sitio (novedad-service) — solo admin */}
+        <Route path="novedades" element={<SoloAdmin><NovedadesAdminPage /></SoloAdmin>} />
       </Route>
     </Routes>
   )

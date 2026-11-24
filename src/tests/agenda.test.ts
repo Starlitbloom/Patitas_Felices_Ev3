@@ -1,13 +1,13 @@
 /* =========================================================
    Prueba P05 — Agenda de disponibilidad del médico
    Archivo probado: src/services/agendaService.ts
-   Se simula una cita guardada en localStorage (datos simulados)
+   Se simula una cita ya cargada desde cita-service (datos simulados)
    y se usan fechas fijas para que el resultado no dependa del día real.
 ========================================================= */
 import { expect, test } from 'vitest'
 import { contarLibres, generarAgendaSemanal } from '../services/agendaService'
 import { obtenerVeterinarioPorId } from '../services/veterinariosService'
-import { CLAVES } from '../services/almacenamiento'
+import { reemplazarCacheCitas, type Cita } from '../services/citasService'
 
 test('P05 - AGENDA: una hora con cita aparece ocupada y los días que el médico no atiende no tienen horas', () => {
   // Datos de prueba
@@ -23,7 +23,7 @@ test('P05 - AGENDA: una hora con cita aparece ocupada y los días que el médico
     servicio: 'Control postoperatorio',
     estado: 'Confirmada',
   }
-  localStorage.setItem(CLAVES.citas, JSON.stringify([citaGuardada]))
+  reemplazarCacheCitas([citaGuardada as unknown as Cita])
 
   const agenda = generarAgendaSemanal(medico, lunes, ahora)
   const [lunesAgenda, martes] = agenda

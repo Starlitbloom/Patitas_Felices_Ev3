@@ -16,11 +16,7 @@
 
 import type { Veterinario } from '../types/veterinario'
 
-import {
-  CLAVES,
-  guardarColeccion,
-  leerColeccion
-} from './almacenamiento'
+import { pedir, mensajeDeError, ApiError } from './api'
 
 import {
   obtenerVeterinarioPorId
@@ -37,6 +33,56 @@ import {
 import type {
   ResultadoOperacion
 } from '../types/usuario'
+
+/* =========================================================
+   DATOS DESDE cita-service (EP3)
+
+   Las citas ya no se guardan en localStorage: vienen de MySQL a través
+   de cita-service. Se guarda una copia en memoria (cacheCitas) para que las
+   validaciones y la agenda sigan siendo síncronas; esa copia se llena con
+   cargarCitas() (personal de la clínica) o cargarMisCitas() (cliente).
+========================================================= */
+let cacheCitas: Cita[] = []
+
+/** Reemplaza la copia en memoria (lo usan las funciones de carga y los tests). */
+export function reemplazarCacheCitas(citas: Cita[]): void {
+  cacheCitas = [...citas]
+}
+
+/** Personal de la clínica: todas las citas (GET /citas). */
+export async function cargarCitas(): Promise<Cita[]> {
+  const citas = await pedir<Cita[]>('cita', '/citas')
+  reemplazarCacheCitas(citas)
+  return citas
+}
+
+/** Cliente: solo sus citas (GET /citas/mis-citas). */
+export async function cargarMisCitas(): Promise<Cita[]> {
+  const citas = await pedir<Cita[]>('cita', '/citas/mis-citas')
+  reemplazarCacheCitas(citas)
+  return citas
+}
+
+/** Cuerpo que espera cita-service en PUT /citas/{id}. */
+function cuerpoCita(cita: Cita) {
+  return {
+    dueno: cita.dueno,
+    propietario: cita.propietario,
+    correo: cita.correo,
+    telefono: cita.telefono,
+    mascota: cita.mascota,
+    tipoMascota: cita.tipoMascota,
+    otraEspecie: cita.otraEspecie ?? null,
+    edadMascota: cita.edadMascota,
+    veterinarioId: cita.veterinarioId ?? null,
+    servicio: cita.servicio,
+    fecha: cita.fecha,
+    hora: cita.hora,
+    motivo: cita.motivo,
+    duracionMinutos: cita.duracionMinutos,
+    estado: cita.estado,
+  }
+}
 /* =========================================================
    1. ESTADOS DE LAS CITAS
    Pendiente:
@@ -540,10 +586,7 @@ if (
 ========================================================= */
 
 export function listarCitas(): Cita[] {
-
-  return leerColeccion<Cita>(
-    CLAVES.citas
-  )
+  return [...cacheCitas]
 }
 
 
@@ -1096,16 +1139,7 @@ const medico =
   ----------------------------------------- */
   try {
 
-    guardarColeccion(
-
-      CLAVES.citas,
-
-      [
-        ...listarCitas(),
-        cita
-      ]
-
-    )
+    reemplazarCacheCitas([...listarCitas(), cita])
 
     return {
 
@@ -1132,14 +1166,17 @@ const medico =
 }
 /* =========================================================
    22. MODIFICAR UNA CITA
+
+   Primero se valida en el navegador (mensajes rápidos) y después
+   se guarda en cita-service:
+   - Solo cambia el estado → PATCH /citas/{id}/estado
+   - Cambia fecha, hora, servicio o médico → PUT /citas/{id}
+   cita-service vuelve a validar horario y choques antes de guardar.
 ========================================================= */
-export function actualizarCita(
-
+export async function actualizarCita(
   id: string | number,
-
   cambios: CambiosCita
-
-): ResultadoOperacion<Cita> {
+): Promise<ResultadoOperacion<Cita>> {
   /* -----------------------------------------
      Buscar la cita.
   ----------------------------------------- */
@@ -1326,76 +1363,48 @@ export function actualizarCita(
   /* -----------------------------------------
      Guardar la cita modificada.
   ----------------------------------------- */
-  citas[indice] = actualizada
-
   try {
 
-    guardarColeccion(
-      CLAVES.citas,
-      citas
-    )
+    const soloEstado = Object.keys(cambios).every((clave) => clave === 'estado')
+
+    const guardada = soloEstado && cambios.estado
+      ? await pedir<Cita>('cita', `/citas/${id}/estado`, {
+          metodo: 'PATCH',
+          cuerpo: { estado: cambios.estado }
+        })
+      : await pedir<Cita>('cita', `/citas/${id}`, {
+          metodo: 'PUT',
+          cuerpo: cuerpoCita(actualizada)
+        })
+
+    citas[indice] = guardada
+    reemplazarCacheCitas(citas)
 
     return {
-
       ok: true,
-
-      dato: actualizada
-
+      dato: guardada
     }
 
-  } catch {
+  } catch (error) {
 
     return {
-
       ok: false,
-
-      campo: 'general',
-
-      mensaje: 'No fue posible actualizar la cita.'
-
+      campo: error instanceof ApiError && error.campo ? error.campo : 'general',
+      mensaje: mensajeDeError(error)
     }
-
   }
-
 }
 /* =========================================================
    23. ELIMINAR UNA CITA
 ========================================================= */
-export function eliminarCita(
-
+export async function eliminarCita(
   id: string | number
-
-): boolean {
-
-  const citas = listarCitas()
-
-  const restantes = citas.filter(
-
-    (cita) => String(cita.id) !== String(id)
-
-  )
-  /* Si no encontramos el ID, devolvemos false. */
-  if (restantes.length === citas.length) {
-
-    return false
-  }
-  /* Guardar el listado sin la cita eliminada. */
+): Promise<boolean> {
   try {
-
-    guardarColeccion(
-
-      CLAVES.citas,
-
-      restantes
-
-    )
-
+    await pedir<void>('cita', `/citas/${id}`, { metodo: 'DELETE' })
+    reemplazarCacheCitas(cacheCitas.filter((cita) => String(cita.id) !== String(id)))
     return true
-
   } catch {
-
     return false
-
   }
-
 }

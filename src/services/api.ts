@@ -13,21 +13,28 @@
       { status, campo, mensaje } → el formulario marca el input con error.
 ========================================================= */
 
-/** URL base de cada microservicio. Se pueden cambiar en el archivo .env (ver .env.example). */
+/**
+ * Todas las peticiones entran por el api-gateway (puerto 8080), que las reenvía al microservicio
+ * registrado en Eureka: /auth/** → auth-service, /cita/** → cita-service, etc.
+ * Se pueden cambiar en el archivo .env (ver .env.example), por ejemplo para llamar directo a un puerto.
+ */
+export const GATEWAY = import.meta.env.VITE_GATEWAY_URL ?? 'http://localhost:8080'
+
+/** URL base de cada microservicio (a través del gateway). */
 export const SERVICIOS = {
-  auth: import.meta.env.VITE_AUTH_URL ?? 'http://localhost:8081/api/v1',
-  mascota: import.meta.env.VITE_MASCOTA_URL ?? 'http://localhost:8082/api/v1',
-  historial: import.meta.env.VITE_HISTORIAL_URL ?? 'http://localhost:8083/api/v1',
-  servicioClinico: import.meta.env.VITE_SERVICIO_CLINICO_URL ?? 'http://localhost:8084/api/v1',
-    // Microservicio de gestión de citas veterinarias.
-  cita: import.meta.env.VITE_CITA_URL ?? 'http://localhost:8086/api',
-   // Microservicio de profesionales veterinarios.
-  veterinario: import.meta.env.VITE_VETERINARIO_URL ?? 'http://localhost:8085/api',
-   // Microservicio de novedades de la clínica.
-  novedad: import.meta.env.VITE_NOVEDAD_URL ?? 'http://localhost:8087/api',
-  contacto: import.meta.env.VITE_CONTACTO_URL ?? 'http://localhost:8088/api/v1',
-  notificacion: import.meta.env.VITE_NOTIFICACION_URL ?? 'http://localhost:8089/api/v1',
-  reporte: import.meta.env.VITE_REPORTE_URL ?? 'http://localhost:8090/api/v1',
+  auth: import.meta.env.VITE_AUTH_URL ?? `${GATEWAY}/auth/api/v1`,
+  mascota: import.meta.env.VITE_MASCOTA_URL ?? `${GATEWAY}/mascota/api/v1`,
+  historial: import.meta.env.VITE_HISTORIAL_URL ?? `${GATEWAY}/historial/api/v1`,
+  servicioClinico: import.meta.env.VITE_SERVICIO_CLINICO_URL ?? `${GATEWAY}/servicio-clinico/api/v1`,
+  // Microservicio de gestión de citas veterinarias.
+  cita: import.meta.env.VITE_CITA_URL ?? `${GATEWAY}/cita/api/v1`,
+  // Microservicio de profesionales veterinarios.
+  veterinario: import.meta.env.VITE_VETERINARIO_URL ?? `${GATEWAY}/veterinario/api/v1`,
+  // Microservicio de novedades de la clínica.
+  novedad: import.meta.env.VITE_NOVEDAD_URL ?? `${GATEWAY}/novedad/api/v1`,
+  contacto: import.meta.env.VITE_CONTACTO_URL ?? `${GATEWAY}/contacto/api/v1`,
+  notificacion: import.meta.env.VITE_NOTIFICACION_URL ?? `${GATEWAY}/notificacion/api/v1`,
+  reporte: import.meta.env.VITE_REPORTE_URL ?? `${GATEWAY}/reporte/api/v1`,
 } as const
 
 export type Servicio = keyof typeof SERVICIOS
@@ -148,6 +155,12 @@ export async function pedir<T>(servicio: Servicio, ruta: string, opciones: Opcio
       body: cuerpo !== undefined ? JSON.stringify(cuerpo) : undefined,
     })
   } catch {
+    throw new ApiError(0, null, `No se pudo conectar con ${NOMBRE_SERVICIO[servicio]}. Revisa que el microservicio esté encendido.`)
+  }
+
+  // El gateway responde 502/503/504 cuando el microservicio está apagado o aún no se registra en Eureka:
+  // se trata igual que "no se pudo conectar" (status 0), así la sesión no se cierra por un servicio caído.
+  if (respuesta.status === 502 || respuesta.status === 503 || respuesta.status === 504) {
     throw new ApiError(0, null, `No se pudo conectar con ${NOMBRE_SERVICIO[servicio]}. Revisa que el microservicio esté encendido.`)
   }
 

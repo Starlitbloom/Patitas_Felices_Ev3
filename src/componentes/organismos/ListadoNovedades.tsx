@@ -12,9 +12,11 @@
    Utilizamos useState para controlar el filtro.
 ========================================================= */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { NOVEDADES } from '../../data/contenidoNovedades'
+import type { Novedad } from '../../data/contenidoNovedades'
+import { listarNovedades } from '../../services/novedadesService'
+import { mensajeDeError } from '../../services/api'
 import { TarjetaNovedad } from '../moleculas/TarjetaNovedad'
 import { TituloSeccion } from '../moleculas/TituloSeccion'
 
@@ -32,23 +34,39 @@ export default function ListadoNovedades() {
   // Estado del filtro seleccionado.
   const [categoria, setCategoria] = useState('Todas')
 
-  // Identificamos el artículo destacado.
-  const destacada = NOVEDADES.find(
-    (novedad) => novedad.id === 'vacunas'
-  )
+  // EP3: las novedades vienen de novedad-service (MySQL)
+  const [novedades, setNovedades] = useState<Novedad[]>([])
+  const [cargando, setCargando] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let activo = true
+    listarNovedades()
+      .then((lista) => {
+        if (activo) setNovedades(lista)
+      })
+      .catch((e: unknown) => {
+        if (activo) setError(mensajeDeError(e))
+      })
+      .finally(() => {
+        if (activo) setCargando(false)
+      })
+    return () => {
+      activo = false
+    }
+  }, [])
+
+  // El artículo destacado es la publicación más reciente.
+  const destacada = novedades.at(0)
 
   /* =========================================================
       FILTRO DE NOVEDADES
-
-     - Todas: muestra las tres noticias habituales.
-     - Salud: incluye la noticia destacada de vacunación.
-     - Otras categorías: muestra sus noticias respectivas.
-
+     - Todas: muestra las demás publicaciones (la más reciente ya está destacada).
+     - Una categoría: muestra todas las publicaciones de esa categoría.
   ========================================================= */
-
-  const publicaciones = NOVEDADES.filter((novedad) =>
+  const publicaciones = novedades.filter((novedad) =>
     categoria === 'Todas'
-      ? novedad.id !== 'vacunas'
+      ? novedad.id !== destacada?.id
       : novedad.categoria === categoria
   )
 
@@ -147,7 +165,11 @@ export default function ListadoNovedades() {
           </div>
 
           {/* Tarjetas filtradas */}
-          {publicaciones.length > 0 ? (
+          {cargando ? (
+            <p role="status">Cargando novedades…</p>
+          ) : error ? (
+            <p role="alert">⚠️ {error}</p>
+          ) : publicaciones.length > 0 ? (
             <div className="grid-novedades">
               {publicaciones.map((novedad) => (
                 <TarjetaNovedad

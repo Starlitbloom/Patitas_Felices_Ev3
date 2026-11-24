@@ -161,7 +161,7 @@ function adaptarVeterinario(
 /**
  * Realiza la petición:
  *
- * GET http://localhost:8085/api/veterinarios
+ * GET http://localhost:8080/veterinario/api/v1/veterinarios
  *
  * Este endpoint es público y no requiere JWT.
  *
@@ -189,7 +189,7 @@ export async function consultarVeterinariosApi():
 /**
  * Realiza la petición:
  *
- * GET http://localhost:8085/api/veterinarios/{id}
+ * GET http://localhost:8080/veterinario/api/v1/veterinarios/{id}
  *
  * Devuelve null cuando el veterinario no existe.
  */

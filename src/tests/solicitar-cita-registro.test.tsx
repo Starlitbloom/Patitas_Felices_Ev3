@@ -4,7 +4,8 @@
 import { beforeEach, expect, test } from 'vitest'
 import {
   crearCita,
-  listarCitasUsuario
+  listarCitasUsuario,
+  reemplazarCacheCitas
 } from '../services/citasService'
 
 import {
@@ -13,7 +14,10 @@ import {
 
 import { datosCitaPrueba } from './datos-citas'
 
-beforeEach(() => localStorage.clear())
+beforeEach(() => {
+  localStorage.clear()
+  reemplazarCacheCitas([])
+})
 
 test('P11 - registra una cita veterinaria correctamente', () => {
   const resultado = crearCita(datosCitaPrueba())

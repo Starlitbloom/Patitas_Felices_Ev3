@@ -6,7 +6,8 @@ import { beforeEach, expect, test } from 'vitest'
 import {
   crearCita,
   horasOcupadas,
-  listarCitas
+  listarCitas,
+  reemplazarCacheCitas
 } from '../services/citasService'
 
 import {
@@ -14,7 +15,10 @@ import {
   siguienteDiaSemana
 } from './datos-citas'
 
-beforeEach(() => localStorage.clear())
+beforeEach(() => {
+  localStorage.clear()
+  reemplazarCacheCitas([])
+})
 
 test('P13 - evita reservar citas con horarios superpuestos', () => {
 

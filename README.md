@@ -7,17 +7,17 @@ del repositorio `Patitas_Felices_Ev3_Backend`, con autenticación **JWT** y role
 ## EP3 — Integración con el backend
 
 ### 1. Levantar el backend
-1. Encender MySQL en XAMPP.
-2. En `Patitas_Felices_Ev3_Backend`, ejecutar cada microservicio (botón ▶ en VS Code o `.\mvnw spring-boot:run`).
-   Para probar el módulo de usuarios bastan: **auth-service (8081)**, contacto-service (8088),
-   notificacion-service (8089) y report-service (8090).
+1. Encender MySQL (XAMPP o Docker).
+2. En `Patitas_Felices_Ev3_Backend`, ejecutar con `.\mvnw spring-boot:run` (o el botón ▶ en VS Code), en este orden:
+   **eureka-server (8761)** → **auth-service (8081)** → el resto de los microservicios → **api-gateway (8080)**.
+3. Revisar en http://localhost:8761 que los servicios aparezcan registrados.
 
 ### 2. Levantar el frontend
 ```bash
 npm install
 npm run dev
 ```
-Las URLs de los microservicios están en `src/services/api.ts`. Para cambiarlas, copiar `.env.example` como `.env`.
+El sitio llama a todos los microservicios a través del **api-gateway** (`http://localhost:8080/<servicio>/api/v1`), configurado en `src/services/api.ts`. Para cambiar las direcciones, copiar `.env.example` como `.env`.
 
 ### Cuentas de prueba (auth-service)
 | Correo | Contraseña | Rol |

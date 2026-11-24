@@ -77,7 +77,7 @@ export default function EquipoPage() {
 
      Se ejecuta al abrir la página.
 
-     GET http://localhost:8085/api/veterinarios
+     GET http://localhost:8080/veterinario/api/v1/veterinarios
 
      Los datos se obtienen desde Spring Boot y MySQL.
   ===================================================== */

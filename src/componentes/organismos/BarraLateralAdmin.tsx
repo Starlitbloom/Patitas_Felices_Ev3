@@ -21,6 +21,7 @@ const ITEMS = [
   { to: '/admin/citas', texto: 'Citas', icono: '/img/icono-admin-citas.png' },
   { to: '/admin/agenda', texto: 'Agenda', icono: '📅' },
   { to: '/admin/mensajes', texto: 'Mensajes', icono: '✉️' },
+  { to: '/admin/novedades', texto: 'Novedades', icono: '📰', soloAdmin: true },
   { to: '/admin/reportes', texto: 'Reportes', icono: '/img/icono-admin-reportes.png', soloAdmin: true },
   { to: '/', texto: 'Ver sitio', icono: '/img/icono-admin-ver-sitio.png', end: true },
 ]

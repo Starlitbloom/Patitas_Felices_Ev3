@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { actualizarUsuario } from '../services/usuariosService'
-import { listarCitasDe } from '../services/datosEquipoService'
+import { cargarMisCitas, type Cita } from '../services/citasService'
 import { listarMascotasPorDueno } from '../services/mascotasService'
 import { mensajeDeError } from '../services/api'
 import type { Mascota } from '../types/mascota'
@@ -47,6 +47,24 @@ export default function PerfilPage() {
     }
   }, [correo, version])
 
+  /* EP3: las citas del usuario vienen de cita-service (GET /citas/mis-citas) */
+  const [misCitas, setMisCitas] = useState<Cita[]>([])
+  const [errorCitas, setErrorCitas] = useState<string | null>(null)
+  useEffect(() => {
+    if (!correo) return
+    let activo = true
+    cargarMisCitas()
+      .then((lista) => {
+        if (!activo) return
+        setMisCitas(lista)
+        setErrorCitas(null)
+      })
+      .catch((e) => activo && setErrorCitas(mensajeDeError(e)))
+    return () => {
+      activo = false
+    }
+  }, [correo])
+
   if (!usuario) return null // la ruta ya está protegida; esto solo satisface a TypeScript
 
   /* Fichas completas del dueño. Así también aparecen los controles de edición
@@ -60,10 +78,10 @@ export default function PerfilPage() {
       <BloqueCompletarMascota key={`${m.id}-${version}`} mascota={m} onGuardado={() => setVersion((v) => v + 1)} />
     ),
   }))
-  const citas = listarCitasDe(usuario.correo).map((c, i) => ({
-    id: c.id ?? String(i),
-    titulo: `${c.fecha || 'Fecha por confirmar'} — ${c.motivo || c.servicio || 'Consulta'}`,
-    detalle: c.estado || 'Pendiente',
+  const citas = misCitas.map((c) => ({
+    id: String(c.id),
+    titulo: `${c.fecha} ${c.hora} — ${c.servicio || 'Consulta'}${c.mascota ? ` (${c.mascota})` : ''}`,
+    detalle: c.estado,
   }))
 
   const guardar = async (datos: DatosFormularioUsuario) => {
@@ -155,7 +173,7 @@ export default function PerfilPage() {
           icono="📅"
           iconoItem="📅"
           items={citas}
-          textoVacio="Aún no tienes citas agendadas."
+          textoVacio={errorCitas ? `⚠️ ${errorCitas}` : 'Aún no tienes citas agendadas.'}
           enlace={{ to: '/solicitar-cita', texto: 'Solicitar una cita' }}
           ancha
         />
